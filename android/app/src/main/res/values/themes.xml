@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Xtream" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#050714</item>
+        <item name="android:colorBackground">#050714</item>
+        <item name="android:statusBarColor">#050714</item>
+        <item name="android:navigationBarColor">#050714</item>
+        <item name="android:textColor">#F4F7FF</item>
+        <item name="android:textColorHint">#9AA8D4</item>
+    </style>
+</resources>

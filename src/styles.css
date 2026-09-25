@@ -1,0 +1,70 @@
+@import url("https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap");
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --color-bg: #050714;
+  --color-bg-deep: #02030a;
+  --color-surface: #10162c;
+  --color-surface-2: #182248;
+  --color-line: #2c3a78;
+  --color-fg: #f4f7ff;
+  --color-muted: #9aa8d4;
+  --color-amber: #3ecbff;
+  --color-amber-ink: #041018;
+  --color-magenta: #d946ef;
+  --color-danger: #ff6b9d;
+  --radius-lg: 1rem;
+  --radius-xl: 1.35rem;
+}
+
+@layer base {
+  html {
+    background: var(--color-bg);
+    color: var(--color-fg);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  body {
+    min-height: 100dvh;
+    background: var(--color-bg);
+    font-family: var(--font-sans);
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+  p {
+    text-wrap: pretty;
+  }
+}
+
+@layer components {
+  .tv {
+    border-radius: var(--radius-lg);
+    transition:
+      background-color 160ms ease,
+      transform 160ms ease;
+  }
+  .tv:focus {
+    outline: none;
+  }
+  .tv.is-on {
+    outline: 3px solid var(--color-amber);
+    outline-offset: 3px;
+    box-shadow:
+      inset 0 0 0 2px var(--color-amber),
+      0 0 0 6px color-mix(in srgb, var(--color-magenta) 45%, transparent);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .tv {
+      transition: none;
+    }
+  }
+}
