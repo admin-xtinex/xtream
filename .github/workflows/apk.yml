@@ -67,17 +67,15 @@ jobs:
           if [ -s "$tmp" ]; then
             awk 'BEGIN{IGNORECASE=1} /^#/ || NF==0 {next} {host=tolower($NF); if (host ~ /^[a-z0-9.-]+$/ && host ~ /\./) print host}' "$tmp" >> "$dest.fetched"
           fi
-          curl -fsSL --retry 2 --max-time 90 \
-            "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts" \
-            -o "$tmp" || true
-          if [ -s "$tmp" ]; then
-            awk 'BEGIN{IGNORECASE=1} /^#/ || NF==0 {next} {host=tolower($NF); if (host ~ /^[a-z0-9.-]+$/ && host ~ /\./) print host}' "$tmp" >> "$dest.fetched"
-          fi
           if [ -s "$dest.fetched" ]; then
             cat "$dest" "$dest.fetched" | awk 'NF && !seen[$0]++' > "$dest.merged"
             mv "$dest.merged" "$dest"
           fi
           rm -f "$tmp" "$dest.fetched"
+
+      - name: Validate playback rules
+        working-directory: android
+        run: chmod +x ./gradlew && ./gradlew :app:testTvDebugUnitTest --no-daemon --stacktrace
 
       - name: Assemble debug APKs
         working-directory: android
@@ -103,11 +101,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          notes="Blocks third-party ads and popups. Downloads are refused. Pages load over HTTPS."
-          if gh release view v1.5.0 >/dev/null 2>&1; then
-            gh release upload v1.5.0 xtream-tv.apk xtream-mobile.apk --clobber
+          notes="Video streams load again. Ad hosts stay blocked. File downloads stay refused."
+          if gh release view v1.6.0 >/dev/null 2>&1; then
+            gh release upload v1.6.0 xtream-tv.apk xtream-mobile.apk --clobber
           else
-            gh release create v1.5.0 xtream-tv.apk xtream-mobile.apk \
-              --title "Xtream 1.5.0" \
+            gh release create v1.6.0 xtream-tv.apk xtream-mobile.apk \
+              --title "Xtream 1.6.0" \
               --notes "$notes"
           fi

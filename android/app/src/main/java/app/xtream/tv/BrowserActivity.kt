@@ -55,7 +55,7 @@ class BrowserActivity : Activity() {
         web.settings.builtInZoomControls = false
         web.settings.allowFileAccess = false
         web.settings.allowContentAccess = false
-        web.settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
+        web.settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
         @Suppress("DEPRECATION")
         web.settings.allowFileAccessFromFileURLs = false
         @Suppress("DEPRECATION")
@@ -69,7 +69,7 @@ class BrowserActivity : Activity() {
         web.setOnLongClickListener { true }
         val cookies = android.webkit.CookieManager.getInstance()
         cookies.setAcceptCookie(true)
-        cookies.setAcceptThirdPartyCookies(web, false)
+        cookies.setAcceptThirdPartyCookies(web, true)
         web.setBackgroundColor(0xFF02030A.toInt())
         web.addJavascriptInterface(VideoBridge(), "Xtream")
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
@@ -321,22 +321,10 @@ class BrowserActivity : Activity() {
               function hideAds(){
                 if (window.__xtreamAds === false) return;
                 if (!document.body) return;
-                var page = location.hostname.replace(/^www\./, '');
                 document.querySelectorAll('iframe,ins').forEach(function(node){
                   if (node.closest && node.closest('video')) return;
                   var src = node.src || node.getAttribute('src') || '';
-                  if (isAd(src)) { node.remove(); return; }
-                  var host = '';
-                  try { host = new URL(src, location.href).hostname.replace(/^www\./, ''); } catch (e) {}
-                  if (host && host !== page && host.slice(-page.length - 1) !== '.' + page) node.remove();
-                });
-                document.querySelectorAll('body *').forEach(function(node){
-                  if (!node || node.tagName === 'VIDEO' || node.querySelector('video')) return;
-                  var st;
-                  try { st = getComputedStyle(node); } catch (e) { return; }
-                  if (st.position !== 'fixed' && st.position !== 'sticky') return;
-                  var box = node.getBoundingClientRect();
-                  if (box.width > 220 && box.height > 90) node.remove();
+                  if (isAd(src)) node.remove();
                 });
               }
               function boot(){

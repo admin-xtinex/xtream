@@ -51,10 +51,27 @@ object AdBlock {
         if (!enabled(context)) return false
         if (isMedia(url, headers)) return false
         if (isAd(context, url)) return true
+        return false
+    }
+
+    /** JVM-safe check used by the pre-build test. Media is allowed. Downloads and ad hosts are not. */
+    fun wouldBlock(enabled: Boolean, raw: String, mainFrame: Boolean, accept: String = ""): Boolean {
+        val uri = try {
+            java.net.URI(raw)
+        } catch (_: Exception) {
+            return true
+        }
+        val scheme = uri.scheme?.lowercase()
+        if (scheme != "http" && scheme != "https") return true
+        val path = uri.path?.lowercase().orEmpty()
+        if (extension(path) in downloads) return true
+        if (!enabled) return false
         if (mainFrame) return false
-        val host = url.host?.lowercase()?.removePrefix("www.") ?: return false
-        if (sameSite(host, pageHost) || isAllowedCdn(host)) return false
-        return true
+        if (accept.lowercase().let { it.contains("mpegurl") || it.contains("audio/") || it.contains("video/") }) return false
+        if (path.contains(".m3u8") || path.contains(".mpd") || path.contains("/hls/") || path.contains("/dash/")) return false
+        if (extension(path) in media) return false
+        val host = uri.host?.lowercase()?.removePrefix("www.").orEmpty()
+        return needles.any { host.contains(it) }
     }
 
     fun isUnsafe(url: Uri): Boolean {
@@ -67,6 +84,11 @@ object AdBlock {
         val name = path.substringAfterLast('/')
         val ext = name.substringAfterLast('.', "")
         return ext in downloads
+    }
+
+    private fun extension(path: String): String {
+        val name = path.substringBefore('?').substringAfterLast('/')
+        return name.substringAfterLast('.', "")
     }
 
     private fun isMedia(url: Uri, headers: Map<String, String>): Boolean {

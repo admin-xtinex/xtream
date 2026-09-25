@@ -11,8 +11,8 @@ android {
         applicationId = "app.xtream.tv"
         minSdk = 24
         targetSdk = 35
-        versionCode = 6
-        versionName = "1.5.0"
+        versionCode = 7
+        versionName = "1.6.0"
     }
 
     flavorDimensions += "device"
@@ -46,4 +46,5 @@ android {
 
 dependencies {
     implementation("androidx.webkit:webkit:1.12.1")
+    testImplementation("junit:junit:4.13.2")
 }
