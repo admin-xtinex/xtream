@@ -13,6 +13,8 @@ on:
 jobs:
   apk:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -53,13 +55,35 @@ jobs:
             printf '%s\n' "${FROM_VAR}" > "$file"
           fi
 
-      - name: Assemble debug APK
+      - name: Assemble debug APKs
         working-directory: android
         run: chmod +x ./gradlew && ./gradlew :app:assembleDebug --no-daemon --stacktrace
 
-      - name: Upload APK
+      - name: Collect APKs
+        run: |
+          set -euo pipefail
+          cp android/app/build/outputs/apk/tv/debug/app-tv-debug.apk xtream-tv.apk
+          cp android/app/build/outputs/apk/mobile/debug/app-mobile-debug.apk xtream-mobile.apk
+
+      - name: Upload APKs
         uses: actions/upload-artifact@v4
         with:
-          name: xtream-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: xtream-apks
+          path: |
+            xtream-tv.apk
+            xtream-mobile.apk
           if-no-files-found: error
+
+      - name: Publish release downloads
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          notes="xtream-tv.apk is the Android TV build. xtream-mobile.apk is the phone build. Both are debug-signed for sideload."
+          if gh release view v1.1.0 >/dev/null 2>&1; then
+            gh release upload v1.1.0 xtream-tv.apk xtream-mobile.apk --clobber
+          else
+            gh release create v1.1.0 xtream-tv.apk xtream-mobile.apk \
+              --title "Xtream 1.1.0" \
+              --notes "$notes"
+          fi

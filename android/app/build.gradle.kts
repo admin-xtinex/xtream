@@ -11,8 +11,20 @@ android {
         applicationId = "app.xtream.tv"
         minSdk = 24
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.1.0"
+    }
+
+    flavorDimensions += "device"
+    productFlavors {
+        create("tv") {
+            dimension = "device"
+            applicationId = "app.xtream.tv"
+        }
+        create("mobile") {
+            dimension = "device"
+            applicationId = "app.xtream.mobile"
+        }
     }
 
     buildTypes {

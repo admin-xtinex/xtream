@@ -2,15 +2,16 @@
 
 Living-room browser. The web app in this repo is the preview. The installable Android TV build lives in `android/`.
 
-## APK
+## APKs
 
-GitHub Actions builds a sideloadable debug APK on every push to `main`.
+Two sideloadable builds are published on every push to `main`:
 
-1. Open the **Actions** tab and the **Build APK** workflow.
-2. Download the `xtream-apk` artifact.
-3. Install it: `adb install app-debug.apk`
+- [xtream-tv.apk](https://github.com/admin-xtinex/xtream/releases/download/v1.1.0/xtream-tv.apk) for Android TV (landscape, TV launcher)
+- [xtream-mobile.apk](https://github.com/admin-xtinex/xtream/releases/download/v1.1.0/xtream-mobile.apk) for phones
 
-The app shows on a phone launcher and on an Android TV launcher. Arrows move, OK selects, and Back returns. Type a search or an `http`/`https` address, then open the page in the built-in player. Bookmarks and recent pages stay on the device.
+Install with `adb install -r xtream-tv.apk` or `adb install -r xtream-mobile.apk`. The package names are different, so both can be installed on the same device.
+
+Arrows move, OK selects, and Back returns. On a phone, tap works the same way. Type a search or an `http`/`https` address. Bookmarks and recent pages stay on the device.
 
 The home screen **Suggested** row is baked in when the APK is built.
 
