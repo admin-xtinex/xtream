@@ -30,7 +30,7 @@ jobs:
           set -euo pipefail
           SDK="$RUNNER_TEMP/android-sdk"
           mkdir -p "$SDK/cmdline-tools"
-          curl -fsSL -o /tmp/cmdtools.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+          curl -fL --retry 5 --retry-all-errors --retry-delay 2 -o /tmp/cmdtools.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
           unzip -q /tmp/cmdtools.zip -d /tmp/cmdline-tools
           mv /tmp/cmdline-tools/cmdline-tools "$SDK/cmdline-tools/latest"
           echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
