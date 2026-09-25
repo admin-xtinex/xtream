@@ -8,6 +8,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
@@ -30,6 +31,7 @@ class BrowserActivity : Activity() {
         chrome = findViewById(R.id.chrome)
         titleView = findViewById(R.id.page_title)
         save = findViewById(R.id.save)
+        val block = findViewById<Button>(R.id.block)
         val home = findViewById<Button>(R.id.home)
         val root = findViewById<FrameLayout>(R.id.root)
 
@@ -79,6 +81,14 @@ class BrowserActivity : Activity() {
         }
         web.webChromeClient = chromeClient
         web.webViewClient = object : WebViewClient() {
+            override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
+                return if (AdBlock.blocks(this@BrowserActivity, request.url, request.isForMainFrame)) {
+                    AdBlock.emptyResponse()
+                } else {
+                    null
+                }
+            }
+
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 val scheme = request.url.scheme?.lowercase()
                 return scheme != "http" && scheme != "https"
@@ -89,10 +99,19 @@ class BrowserActivity : Activity() {
                 titleView.text = title
                 Library.visit(this@BrowserActivity, url, title)
                 refreshSave()
+                if (AdBlock.enabled(this@BrowserActivity)) {
+                    view.evaluateJavascript(HIDE_ADS, null)
+                }
             }
         }
 
         home.setOnClickListener { finish() }
+        block.setOnClickListener {
+            AdBlock.setEnabled(this, !AdBlock.enabled(this))
+            refreshBlock(block)
+            web.reload()
+        }
+        refreshBlock(block)
         save.setOnClickListener {
             val url = web.url ?: return@setOnClickListener
             val title = web.title?.ifBlank { url } ?: url
@@ -111,6 +130,13 @@ class BrowserActivity : Activity() {
         titleView.text = start
         web.loadUrl(start)
         web.requestFocus()
+    }
+
+    private fun refreshBlock(block: Button) {
+        val on = AdBlock.enabled(this)
+        block.text = getString(if (on) R.string.blocking else R.string.ads)
+        block.setBackgroundResource(if (on) R.drawable.bg_go else R.drawable.bg_tile)
+        block.setTextColor(if (on) 0xFF041018.toInt() else 0xFFF4F7FF.toInt())
     }
 
     private fun refreshSave() {
@@ -144,5 +170,11 @@ class BrowserActivity : Activity() {
 
     companion object {
         const val EXTRA_URL = "url"
+        private const val HIDE_ADS = """
+            (function(){
+              var sel = 'iframe[src*="doubleclick"],iframe[src*="googlesyndication"],iframe[id^="google_ads"],.adsbygoogle,[id^="div-gpt-ad"]';
+              document.querySelectorAll(sel).forEach(function(node){ node.remove(); });
+            })();
+        """
     }
 }

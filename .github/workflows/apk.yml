@@ -55,6 +55,21 @@ jobs:
             printf '%s\n' "${FROM_VAR}" > "$file"
           fi
 
+      - name: Refresh ad block list
+        run: |
+          set -euo pipefail
+          dest="android/app/src/main/assets/adblock.txt"
+          tmp="$(mktemp)"
+          if curl -fsSL --retry 2 --max-time 60 \
+            "https://pgl.yoyo.org/adservers/serverlist.php?hostformat=hosts&showintro=0&mimetype=plaintext" \
+            -o "$tmp"; then
+            awk 'BEGIN{IGNORECASE=1} /^#/ || NF==0 {next} {host=tolower($NF); if (host ~ /^[a-z0-9.-]+$/ && host ~ /\./) print host}' "$tmp" > "$dest.fetched"
+            cat "$dest" "$dest.fetched" | awk 'NF && !seen[$0]++' > "$dest.merged"
+            mv "$dest.merged" "$dest"
+            rm -f "$dest.fetched"
+          fi
+          rm -f "$tmp"
+
       - name: Assemble debug APKs
         working-directory: android
         run: chmod +x ./gradlew && ./gradlew :app:assembleDebug --no-daemon --stacktrace
@@ -79,11 +94,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          notes="xtream-tv.apk is the Android TV build. xtream-mobile.apk is the phone build. Both are debug-signed for sideload."
-          if gh release view v1.1.0 >/dev/null 2>&1; then
-            gh release upload v1.1.0 xtream-tv.apk xtream-mobile.apk --clobber
+          notes="xtream-tv.apk is the Android TV build. xtream-mobile.apk is the phone build. Ad blocking is on until you tap Ads."
+          if gh release view v1.2.0 >/dev/null 2>&1; then
+            gh release upload v1.2.0 xtream-tv.apk xtream-mobile.apk --clobber
           else
-            gh release create v1.1.0 xtream-tv.apk xtream-mobile.apk \
-              --title "Xtream 1.1.0" \
+            gh release create v1.2.0 xtream-tv.apk xtream-mobile.apk \
+              --title "Xtream 1.2.0" \
               --notes "$notes"
           fi

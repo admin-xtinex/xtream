@@ -44,6 +44,19 @@
             android:textSize="18sp" />
 
         <Button
+            android:id="@+id/block"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="8dp"
+            android:background="@drawable/bg_go"
+            android:minHeight="48dp"
+            android:text="@string/blocking"
+            android:textAllCaps="false"
+            android:textColor="#041018"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <Button
             android:id="@+id/save"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"

@@ -8,6 +8,8 @@
     <string name="recent">Recent</string>
     <string name="home">Home</string>
     <string name="save">Save</string>
+    <string name="blocking">Blocking</string>
+    <string name="ads">Ads</string>
     <string name="saved">Saved</string>
     <string name="remove">Remove</string>
     <string name="empty_bookmarks">No bookmarks yet. Open a page and press Save.</string>
