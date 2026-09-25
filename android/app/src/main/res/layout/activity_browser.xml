@@ -5,10 +5,11 @@
     android:layout_height="match_parent"
     android:background="#02030A">
 
-    <WebView
+    <org.mozilla.geckoview.GeckoView
         android:id="@+id/web"
         android:layout_width="match_parent"
-        android:layout_height="match_parent" />
+        android:layout_height="match_parent"
+        android:focusable="true" />
 
     <LinearLayout
         android:id="@+id/chrome"
