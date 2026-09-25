@@ -22,4 +22,12 @@ class AdBlockRulesTest {
         assertTrue(AdBlock.wouldBlock(true, "https://ads.doubleclick.net/pagead/js", false))
         assertTrue(AdBlock.wouldBlock(true, "file:///sdcard/video.mp4", false))
     }
+
+    @Test
+    fun onlyVideoFilesCanBeSaved() {
+        org.junit.Assert.assertEquals("clip.mp4", AdBlock.videoName("https://cdn.example.com/video/clip.mp4"))
+        org.junit.Assert.assertNull(AdBlock.videoName("https://cdn.example.com/app.apk"))
+        org.junit.Assert.assertNull(AdBlock.videoName("https://cdn.example.com/live/index.m3u8"))
+        org.junit.Assert.assertNull(AdBlock.videoName("blob:https://example.com/1234"))
+    }
 }

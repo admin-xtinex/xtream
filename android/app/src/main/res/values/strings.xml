@@ -9,6 +9,9 @@
     <string name="home">Home</string>
     <string name="rotate">Rotate</string>
     <string name="save">Save</string>
+    <string name="video">Video</string>
+    <string name="saving">Saving %1$s</string>
+    <string name="not_video">Only a video file can be saved. Other formats stay blocked.</string>
     <string name="blocking">Blocking</string>
     <string name="ads">Ads</string>
     <string name="saved">Saved</string>

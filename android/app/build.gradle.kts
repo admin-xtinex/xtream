@@ -11,8 +11,8 @@ android {
         applicationId = "app.xtream.tv"
         minSdk = 24
         targetSdk = 35
-        versionCode = 9
-        versionName = "1.8.0"
+        versionCode = 10
+        versionName = "1.9.0"
     }
 
     flavorDimensions += "device"

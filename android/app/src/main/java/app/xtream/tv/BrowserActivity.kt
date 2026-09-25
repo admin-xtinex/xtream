@@ -31,6 +31,8 @@ class BrowserActivity : Activity() {
     private var homeHost: String = ""
     @Volatile
     private var pageHost: String = ""
+    private var pendingVideo: Pair<String, String?>? = null
+    private var pendingMime: String? = null
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -65,7 +67,7 @@ class BrowserActivity : Activity() {
             web.settings.safeBrowsingEnabled = true
         }
         web.settings.javaScriptCanOpenWindowsAutomatically = false
-        web.setDownloadListener { _, _, _, _, _ -> }
+        web.setDownloadListener { url, agent, _, mime, _ -> saveVideoFile(url, agent, mime) }
         web.isLongClickable = false
         web.setOnLongClickListener { true }
         val cookies = android.webkit.CookieManager.getInstance()
@@ -188,6 +190,7 @@ class BrowserActivity : Activity() {
             Library.toggleBookmark(this, url, title)
             refreshSave()
         }
+        findViewById<Button>(R.id.video).setOnClickListener { saveCurrentVideo() }
         home.setOnKeyListener { _, keyCode, event ->
             event.action == KeyEvent.ACTION_DOWN && keyCode == KeyEvent.KEYCODE_DPAD_DOWN && web.requestFocus()
         }
@@ -222,6 +225,54 @@ class BrowserActivity : Activity() {
         val url = web.url
         val saved = url != null && Library.isBookmarked(this, url)
         save.text = getString(if (saved) R.string.saved else R.string.save)
+    }
+
+    private fun saveCurrentVideo() {
+        web.evaluateJavascript(
+            "(function(){var v=document.querySelector('video');return v?(v.currentSrc||v.src||''):'';})()",
+        ) { raw ->
+            val url = raw?.trim()?.removeSurrounding("\"")?.replace("\\/", "/").orEmpty()
+            saveVideoFile(url, CHROME_AGENT, null)
+        }
+    }
+
+    private fun saveVideoFile(raw: String, userAgent: String?, mime: String?) {
+        val name = AdBlock.videoName(raw, mime)
+        if (name == null) {
+            android.widget.Toast.makeText(this, R.string.not_video, android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (android.os.Build.VERSION.SDK_INT <= 28 &&
+            checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            pendingVideo = raw to userAgent
+            pendingMime = mime
+            requestPermissions(arrayOf(android.Manifest.permission.WRITE_EXTERNAL_STORAGE), 21)
+            return
+        }
+        val manager = getSystemService(DOWNLOAD_SERVICE) as android.app.DownloadManager
+        val request = android.app.DownloadManager.Request(Uri.parse(raw))
+            .setTitle(name)
+            .setMimeType(mime?.takeIf { it.startsWith("video/") } ?: "video/mp4")
+            .setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+            .setDestinationInExternalPublicDir(android.os.Environment.DIRECTORY_DOWNLOADS, name)
+        val agent = userAgent?.ifBlank { CHROME_AGENT } ?: CHROME_AGENT
+        request.addRequestHeader("User-Agent", agent)
+        android.webkit.CookieManager.getInstance().getCookie(raw)?.let { request.addRequestHeader("Cookie", it) }
+        try {
+            manager.enqueue(request)
+            android.widget.Toast.makeText(this, getString(R.string.saving, name), android.widget.Toast.LENGTH_SHORT).show()
+        } catch (_: Exception) {
+            android.widget.Toast.makeText(this, R.string.not_video, android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 21 && grantResults.firstOrNull() == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            val pending = pendingVideo ?: return
+            saveVideoFile(pending.first, pending.second, pendingMime)
+        }
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {

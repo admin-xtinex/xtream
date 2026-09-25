@@ -101,11 +101,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          notes="Ad videos are skipped without restarting the movie."
-          if gh release view v1.8.0 >/dev/null 2>&1; then
-            gh release upload v1.8.0 xtream-tv.apk xtream-mobile.apk --clobber
+          notes="Video button saves only video files. Other formats stay blocked."
+          if gh release view v1.9.0 >/dev/null 2>&1; then
+            gh release upload v1.9.0 xtream-tv.apk xtream-mobile.apk --clobber
           else
-            gh release create v1.8.0 xtream-tv.apk xtream-mobile.apk \
-              --title "Xtream 1.8.0" \
+            gh release create v1.9.0 xtream-tv.apk xtream-mobile.apk \
+              --title "Xtream 1.9.0" \
               --notes "$notes"
           fi

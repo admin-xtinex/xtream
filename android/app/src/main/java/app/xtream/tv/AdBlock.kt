@@ -83,6 +83,34 @@ object AdBlock {
         return ext in downloads
     }
 
+    /** Direct video file only. Playlists, blobs, and every other format are refused. */
+    fun videoName(raw: String, mime: String? = null): String? {
+        val uri = try {
+            java.net.URI(raw)
+        } catch (_: Exception) {
+            return null
+        }
+        val scheme = uri.scheme?.lowercase()
+        if (scheme != "http" && scheme != "https") return null
+        val type = mime?.lowercase()?.substringBefore(';')?.trim().orEmpty()
+        if (type.isNotEmpty() && type != "application/octet-stream" && type !in videoMimes) return null
+        val ext = extension(uri.path.orEmpty())
+        if (ext.isNotEmpty() && ext !in videoExt) return null
+        val fileExt = when {
+            ext in videoExt -> ext
+            type == "video/webm" -> "webm"
+            type == "video/x-matroska" || type == "video/matroska" -> "mkv"
+            type == "video/quicktime" -> "mov"
+            type == "video/3gpp" || type == "video/3gpp2" -> "3gp"
+            type == "video/x-msvideo" || type == "video/avi" -> "avi"
+            type == "video/mp4" -> "mp4"
+            else -> return null
+        }
+        val base = uri.path?.substringAfterLast('/')?.substringBefore('?').orEmpty()
+        val clean = base.replace(Regex("[^A-Za-z0-9._-]"), "_").trim('_').take(80)
+        return if (clean.substringAfterLast('.', "") in videoExt) clean else "video.$fileExt"
+    }
+
     private fun extension(path: String): String {
         val name = path.substringBefore('?').substringAfterLast('/')
         return name.substringAfterLast('.', "")
@@ -227,6 +255,21 @@ object AdBlock {
         "apk", "xapk", "aab", "zip", "rar", "7z", "exe", "msi", "dmg", "pkg",
         "iso", "torrent", "bin", "deb", "rpm", "gz", "tgz", "tar", "xz", "crx",
         "bat", "cmd", "sh", "jar", "cab",
+    )
+
+    private val videoExt = setOf("mp4", "webm", "mkv", "m4v", "mov", "3gp", "avi")
+
+    private val videoMimes = setOf(
+        "video/mp4",
+        "video/webm",
+        "video/x-matroska",
+        "video/matroska",
+        "video/quicktime",
+        "video/3gpp",
+        "video/3gpp2",
+        "video/x-m4v",
+        "video/x-msvideo",
+        "video/avi",
     )
 
     private val cdn = listOf(
