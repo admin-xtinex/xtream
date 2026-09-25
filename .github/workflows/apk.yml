@@ -101,11 +101,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          notes="Video streams load again. Ad hosts stay blocked. File downloads stay refused."
-          if gh release view v1.6.0 >/dev/null 2>&1; then
-            gh release upload v1.6.0 xtream-tv.apk xtream-mobile.apk --clobber
+          notes="Loads pages with a normal Chrome identity so sites keep their web player."
+          if gh release view v1.7.0 >/dev/null 2>&1; then
+            gh release upload v1.7.0 xtream-tv.apk xtream-mobile.apk --clobber
           else
-            gh release create v1.6.0 xtream-tv.apk xtream-mobile.apk \
-              --title "Xtream 1.6.0" \
+            gh release create v1.7.0 xtream-tv.apk xtream-mobile.apk \
+              --title "Xtream 1.7.0" \
               --notes "$notes"
           fi

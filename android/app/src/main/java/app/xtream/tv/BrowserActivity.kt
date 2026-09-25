@@ -49,6 +49,7 @@ class BrowserActivity : Activity() {
         web.settings.javaScriptEnabled = true
         web.settings.domStorageEnabled = true
         web.settings.mediaPlaybackRequiresUserGesture = false
+        web.settings.userAgentString = CHROME_AGENT
         web.settings.useWideViewPort = true
         web.settings.loadWithOverviewMode = true
         web.settings.setSupportZoom(true)
@@ -279,6 +280,8 @@ class BrowserActivity : Activity() {
 
     companion object {
         const val EXTRA_URL = "url"
+        private const val CHROME_AGENT =
+            "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.200 Mobile Safari/537.36"
         private const val PAGE_HOOK = """
             (function(){
               if (window.__xtreamHook) return;
