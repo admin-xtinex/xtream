@@ -94,11 +94,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          notes="xtream-tv.apk is the Android TV build. xtream-mobile.apk is the phone build. Ad blocking is on until you tap Ads."
-          if gh release view v1.2.0 >/dev/null 2>&1; then
-            gh release upload v1.2.0 xtream-tv.apk xtream-mobile.apk --clobber
+          notes="Phone build rotates and goes fullscreen when a video plays. TV build stays landscape."
+          if gh release view v1.3.0 >/dev/null 2>&1; then
+            gh release upload v1.3.0 xtream-tv.apk xtream-mobile.apk --clobber
           else
-            gh release create v1.2.0 xtream-tv.apk xtream-mobile.apk \
-              --title "Xtream 1.2.0" \
+            gh release create v1.3.0 xtream-tv.apk xtream-mobile.apk \
+              --title "Xtream 1.3.0" \
               --notes "$notes"
           fi

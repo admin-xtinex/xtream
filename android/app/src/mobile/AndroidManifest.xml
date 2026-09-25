@@ -4,12 +4,12 @@
     <application>
         <activity
             android:name=".MainActivity"
-            android:screenOrientation="unspecified" />
+            android:screenOrientation="fullSensor" />
         <activity
             android:name=".BrowserActivity"
-            android:screenOrientation="unspecified" />
+            android:screenOrientation="fullSensor" />
         <activity
             android:name=".BookmarksActivity"
-            android:screenOrientation="unspecified" />
+            android:screenOrientation="fullSensor" />
     </application>
 </manifest>

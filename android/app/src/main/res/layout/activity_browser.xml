@@ -31,6 +31,19 @@
             android:textColor="#F4F7FF"
             android:textSize="16sp" />
 
+        <Button
+            android:id="@+id/rotate"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:background="@drawable/bg_tile"
+            android:minHeight="48dp"
+            android:text="@string/rotate"
+            android:textAllCaps="false"
+            android:textColor="#F4F7FF"
+            android:textSize="16sp"
+            android:visibility="gone" />
+
         <TextView
             android:id="@+id/page_title"
             android:layout_width="0dp"

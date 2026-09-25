@@ -2,10 +2,13 @@ package app.xtream.tv
 
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.content.pm.ActivityInfo
+import android.content.res.Configuration
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
+import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -32,8 +35,10 @@ class BrowserActivity : Activity() {
         titleView = findViewById(R.id.page_title)
         save = findViewById(R.id.save)
         val block = findViewById<Button>(R.id.block)
+        val rotate = findViewById<Button>(R.id.rotate)
         val home = findViewById<Button>(R.id.home)
         val root = findViewById<FrameLayout>(R.id.root)
+        val isTv = resources.getBoolean(R.bool.is_television)
 
         web.settings.javaScriptEnabled = true
         web.settings.domStorageEnabled = true
@@ -44,6 +49,7 @@ class BrowserActivity : Activity() {
         web.settings.builtInZoomControls = false
         web.settings.allowFileAccess = false
         web.setBackgroundColor(0xFF02030A.toInt())
+        web.addJavascriptInterface(VideoBridge(), "Xtream")
 
         val chromeClient = object : WebChromeClient() {
             override fun onShowCustomView(view: View?, callback: CustomViewCallback?) {
@@ -54,6 +60,9 @@ class BrowserActivity : Activity() {
                 customView = view
                 customCallback = callback
                 chrome.visibility = View.GONE
+                if (!isTv) {
+                    requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                }
                 if (view != null) {
                     root.addView(
                         view,
@@ -72,6 +81,9 @@ class BrowserActivity : Activity() {
                 customCallback?.onCustomViewHidden()
                 customCallback = null
                 chrome.visibility = View.VISIBLE
+                if (!isTv) {
+                    requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
+                }
             }
 
             override fun onReceivedTitle(view: WebView?, title: String?) {
@@ -99,9 +111,8 @@ class BrowserActivity : Activity() {
                 titleView.text = title
                 Library.visit(this@BrowserActivity, url, title)
                 refreshSave()
-                if (AdBlock.enabled(this@BrowserActivity)) {
-                    view.evaluateJavascript(HIDE_ADS, null)
-                }
+                val ads = if (AdBlock.enabled(this@BrowserActivity)) "true" else "false"
+                view.evaluateJavascript("window.__xtreamAds=$ads;$PAGE_HOOK", null)
             }
         }
 
@@ -112,6 +123,17 @@ class BrowserActivity : Activity() {
             web.reload()
         }
         refreshBlock(block)
+        if (!isTv) {
+            rotate.visibility = View.VISIBLE
+            rotate.setOnClickListener {
+                val portrait = resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT
+                requestedOrientation = if (portrait) {
+                    ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                } else {
+                    ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+                }
+            }
+        }
         save.setOnClickListener {
             val url = web.url ?: return@setOnClickListener
             val title = web.title?.ifBlank { url } ?: url
@@ -155,11 +177,39 @@ class BrowserActivity : Activity() {
 
     @Deprecated("Activity back is the TV remote Back key")
     override fun onBackPressed() {
+        if (customView != null || chrome.visibility != View.VISIBLE) {
+            exitVideo()
+            return
+        }
+        if (web.canGoBack()) web.goBack() else super.onBackPressed()
+    }
+
+    private fun exitVideo() {
         if (customView != null) {
             (web.webChromeClient as? WebChromeClient)?.onHideCustomView()
             return
         }
-        if (web.canGoBack()) web.goBack() else super.onBackPressed()
+        chrome.visibility = View.VISIBLE
+        if (!resources.getBoolean(R.bool.is_television)) {
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
+        }
+    }
+
+    private inner class VideoBridge {
+        @JavascriptInterface
+        fun onVideoPlay() {
+            runOnUiThread {
+                chrome.visibility = View.GONE
+                if (!resources.getBoolean(R.bool.is_television)) {
+                    requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                }
+            }
+        }
+
+        @JavascriptInterface
+        fun onVideoEnd() {
+            runOnUiThread { exitVideo() }
+        }
     }
 
     override fun onDestroy() {
@@ -170,10 +220,35 @@ class BrowserActivity : Activity() {
 
     companion object {
         const val EXTRA_URL = "url"
-        private const val HIDE_ADS = """
+        private const val PAGE_HOOK = """
             (function(){
-              var sel = 'iframe[src*="doubleclick"],iframe[src*="googlesyndication"],iframe[id^="google_ads"],.adsbygoogle,[id^="div-gpt-ad"]';
-              document.querySelectorAll(sel).forEach(function(node){ node.remove(); });
+              if (window.__xtreamHook) return;
+              window.__xtreamHook = true;
+              function hook(v){
+                if (!v || v.__xtream) return;
+                v.__xtream = true;
+                v.addEventListener('play', function(){
+                  var box = v.getBoundingClientRect();
+                  if (box.width < 200 && box.height < 120) return;
+                  try {
+                    if (v.webkitEnterFullscreen) v.webkitEnterFullscreen();
+                    else if (v.requestFullscreen) v.requestFullscreen();
+                  } catch (e) {}
+                  try { Xtream.onVideoPlay(); } catch (e) {}
+                });
+                v.addEventListener('ended', function(){
+                  try { Xtream.onVideoEnd(); } catch (e) {}
+                });
+              }
+              function scan(){ document.querySelectorAll('video').forEach(hook); }
+              function hideAds(){
+                if (!window.__xtreamAds) return;
+                var sel = 'iframe[src*="doubleclick"],iframe[src*="googlesyndication"],iframe[id^="google_ads"],.adsbygoogle,[id^="div-gpt-ad"]';
+                document.querySelectorAll(sel).forEach(function(node){ node.remove(); });
+              }
+              scan();
+              hideAds();
+              new MutationObserver(function(){ scan(); hideAds(); }).observe(document.documentElement, {childList:true, subtree:true});
             })();
         """
     }
