@@ -60,15 +60,24 @@ jobs:
           set -euo pipefail
           dest="android/app/src/main/assets/adblock.txt"
           tmp="$(mktemp)"
-          if curl -fsSL --retry 2 --max-time 60 \
+          : > "$dest.fetched"
+          curl -fsSL --retry 2 --max-time 90 \
             "https://pgl.yoyo.org/adservers/serverlist.php?hostformat=hosts&showintro=0&mimetype=plaintext" \
-            -o "$tmp"; then
-            awk 'BEGIN{IGNORECASE=1} /^#/ || NF==0 {next} {host=tolower($NF); if (host ~ /^[a-z0-9.-]+$/ && host ~ /\./) print host}' "$tmp" > "$dest.fetched"
+            -o "$tmp" || true
+          if [ -s "$tmp" ]; then
+            awk 'BEGIN{IGNORECASE=1} /^#/ || NF==0 {next} {host=tolower($NF); if (host ~ /^[a-z0-9.-]+$/ && host ~ /\./) print host}' "$tmp" >> "$dest.fetched"
+          fi
+          curl -fsSL --retry 2 --max-time 90 \
+            "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts" \
+            -o "$tmp" || true
+          if [ -s "$tmp" ]; then
+            awk 'BEGIN{IGNORECASE=1} /^#/ || NF==0 {next} {host=tolower($NF); if (host ~ /^[a-z0-9.-]+$/ && host ~ /\./) print host}' "$tmp" >> "$dest.fetched"
+          fi
+          if [ -s "$dest.fetched" ]; then
             cat "$dest" "$dest.fetched" | awk 'NF && !seen[$0]++' > "$dest.merged"
             mv "$dest.merged" "$dest"
-            rm -f "$dest.fetched"
           fi
-          rm -f "$tmp"
+          rm -f "$tmp" "$dest.fetched"
 
       - name: Assemble debug APKs
         working-directory: android
@@ -94,11 +103,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          notes="Phone build rotates and goes fullscreen when a video plays. TV build stays landscape."
-          if gh release view v1.3.0 >/dev/null 2>&1; then
-            gh release upload v1.3.0 xtream-tv.apk xtream-mobile.apk --clobber
+          notes="Ad blocking stops known ad-network requests and popunders before the page runs."
+          if gh release view v1.4.0 >/dev/null 2>&1; then
+            gh release upload v1.4.0 xtream-tv.apk xtream-mobile.apk --clobber
           else
-            gh release create v1.3.0 xtream-tv.apk xtream-mobile.apk \
-              --title "Xtream 1.3.0" \
+            gh release create v1.4.0 xtream-tv.apk xtream-mobile.apk \
+              --title "Xtream 1.4.0" \
               --notes "$notes"
           fi

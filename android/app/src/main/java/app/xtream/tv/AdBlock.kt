@@ -22,10 +22,16 @@ object AdBlock {
 
     fun blocks(context: Context, url: Uri, mainFrame: Boolean): Boolean {
         if (mainFrame || !enabled(context)) return false
+        return isAd(context, url)
+    }
+
+    fun isAd(context: Context, url: Uri): Boolean {
+        if (!enabled(context)) return false
         val scheme = url.scheme?.lowercase()
         if (scheme != "http" && scheme != "https") return false
         val host = url.host?.lowercase()?.removePrefix("www.") ?: return false
         if (host.isBlank() || !host.contains('.')) return false
+        if (needles.any { host.contains(it) }) return true
         val list = hosts(context)
         var name = host
         while (name.contains('.')) {
@@ -67,4 +73,74 @@ object AdBlock {
             return hosts
         }
     }
+
+    private val needles = listOf(
+        "doubleclick",
+        "googlesyndication",
+        "googleadservices",
+        "googletagservices",
+        "google-analytics",
+        "adservice.google",
+        "2mdn.net",
+        "adnxs.",
+        "adsrvr.",
+        "adform.net",
+        "adsafeprotected",
+        "amazon-adsystem",
+        "casalemedia",
+        "criteo.",
+        "criteo.net",
+        "demdex.net",
+        "doubleverify",
+        "moatads",
+        "outbrain",
+        "pubmatic",
+        "rubiconproject",
+        "scorecardresearch",
+        "taboola",
+        "smartadserver",
+        "openx.net",
+        "popads",
+        "popcash",
+        "propellerads",
+        "revcontent",
+        "sharethrough",
+        "spotxchange",
+        "teads.tv",
+        "exoclick",
+        "exosrv",
+        "trafficjunky",
+        "juicyads",
+        "adsterra",
+        "hilltopads",
+        "clickadu",
+        "monetag",
+        "adskeeper",
+        "magsrv",
+        "realsrv",
+        "tsyndicate",
+        "trafficstars",
+        "onclickads",
+        "popunder",
+        "clickaine",
+        "galaksion",
+        "admaven",
+        "highrevenue",
+        "serving-sys",
+        "imasdk.googleapis",
+        "fundingchoices",
+        "pagead",
+        "securepubads",
+        "bidswitch",
+        "contextweb",
+        "mgid.com",
+        "admob.",
+        "ads.yahoo",
+        "ads.twitter",
+        "popads.net",
+        "adclick",
+        "banner-ads",
+        "adservice",
+        "adserver",
+    )
 }

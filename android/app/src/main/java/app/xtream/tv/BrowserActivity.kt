@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
+import android.net.Uri
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.View
@@ -17,6 +18,8 @@ import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.TextView
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
 
 class BrowserActivity : Activity() {
     private lateinit var web: WebView
@@ -25,6 +28,7 @@ class BrowserActivity : Activity() {
     private lateinit var save: Button
     private var customView: View? = null
     private var customCallback: WebChromeClient.CustomViewCallback? = null
+    private var homeHost: String = ""
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -48,8 +52,12 @@ class BrowserActivity : Activity() {
         web.settings.setSupportZoom(true)
         web.settings.builtInZoomControls = false
         web.settings.allowFileAccess = false
+        web.settings.javaScriptCanOpenWindowsAutomatically = false
         web.setBackgroundColor(0xFF02030A.toInt())
         web.addJavascriptInterface(VideoBridge(), "Xtream")
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+            WebViewCompat.addDocumentStartJavaScript(web, PAGE_HOOK, setOf("*"))
+        }
 
         val chromeClient = object : WebChromeClient() {
             override fun onShowCustomView(view: View?, callback: CustomViewCallback?) {
@@ -103,7 +111,21 @@ class BrowserActivity : Activity() {
 
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 val scheme = request.url.scheme?.lowercase()
-                return scheme != "http" && scheme != "https"
+                if (scheme != "http" && scheme != "https") return true
+                if (request.isForMainFrame && !sameSite(request.url.host) && AdBlock.isAd(this@BrowserActivity, request.url)) {
+                    return true
+                }
+                return false
+            }
+
+            override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
+                val uri = Uri.parse(url)
+                if (!sameSite(uri.host) && AdBlock.isAd(this@BrowserActivity, uri) && view.canGoBack()) {
+                    view.stopLoading()
+                    view.goBack()
+                    return
+                }
+                view.evaluateJavascript(PAGE_HOOK, null)
             }
 
             override fun onPageFinished(view: WebView, url: String) {
@@ -149,9 +171,17 @@ class BrowserActivity : Activity() {
             finish()
             return
         }
+        homeHost = Uri.parse(start).host?.lowercase()?.removePrefix("www.").orEmpty()
         titleView.text = start
         web.loadUrl(start)
         web.requestFocus()
+    }
+
+    private fun sameSite(host: String?): Boolean {
+        val name = host?.lowercase()?.removePrefix("www.") ?: return false
+        val home = homeHost
+        if (home.isEmpty()) return true
+        return name == home || name.endsWith(".$home") || home.endsWith(".$name")
     }
 
     private fun refreshBlock(block: Button) {
@@ -197,6 +227,9 @@ class BrowserActivity : Activity() {
 
     private inner class VideoBridge {
         @JavascriptInterface
+        fun adsOn(): Boolean = AdBlock.enabled(this@BrowserActivity)
+
+        @JavascriptInterface
         fun onVideoPlay() {
             runOnUiThread {
                 chrome.visibility = View.GONE
@@ -224,6 +257,21 @@ class BrowserActivity : Activity() {
             (function(){
               if (window.__xtreamHook) return;
               window.__xtreamHook = true;
+              var ads = true;
+              try { ads = Xtream.adsOn(); } catch (e) {}
+              window.__xtreamAds = ads;
+              if (ads) {
+                window.open = function(){ return null; };
+              }
+              var keys = ['doubleclick','googlesyndication','googleadservices','googletagservices','popads','popcash','exoclick','exosrv','trafficjunky','juicyads','adsterra','hilltopads','clickadu','monetag','propellerads','outbrain','taboola','revcontent','adnxs','adservice','adserver','adskeeper','magsrv','realsrv','tsyndicate','trafficstars','onclickads','popunder','clickaine','galaksion','admaven','highrevenue','pagead','securepubads','fundingchoices','imasdk','mgid.com','adsterra','exoclick'];
+              function isAd(src){
+                if (!src) return false;
+                src = String(src).toLowerCase();
+                for (var i = 0; i < keys.length; i++) {
+                  if (src.indexOf(keys[i]) !== -1) return true;
+                }
+                return false;
+              }
               function hook(v){
                 if (!v || v.__xtream) return;
                 v.__xtream = true;
@@ -240,15 +288,30 @@ class BrowserActivity : Activity() {
                   try { Xtream.onVideoEnd(); } catch (e) {}
                 });
               }
-              function scan(){ document.querySelectorAll('video').forEach(hook); }
-              function hideAds(){
-                if (!window.__xtreamAds) return;
-                var sel = 'iframe[src*="doubleclick"],iframe[src*="googlesyndication"],iframe[id^="google_ads"],.adsbygoogle,[id^="div-gpt-ad"]';
-                document.querySelectorAll(sel).forEach(function(node){ node.remove(); });
+              function scan(){
+                if (!document.body) return;
+                document.querySelectorAll('video').forEach(hook);
               }
-              scan();
-              hideAds();
-              new MutationObserver(function(){ scan(); hideAds(); }).observe(document.documentElement, {childList:true, subtree:true});
+              function hideAds(){
+                if (window.__xtreamAds === false) return;
+                if (!document.body) return;
+                document.querySelectorAll('iframe,ins,script,a').forEach(function(node){
+                  if (node.closest && node.closest('video')) return;
+                  var src = node.src || node.getAttribute('src') || node.href || '';
+                  if (!isAd(src)) return;
+                  node.remove();
+                });
+              }
+              function boot(){
+                scan();
+                hideAds();
+                if (!document.documentElement || window.__xtreamObs) return;
+                window.__xtreamObs = new MutationObserver(function(){ scan(); hideAds(); });
+                window.__xtreamObs.observe(document.documentElement, {childList:true, subtree:true});
+              }
+              boot();
+              document.addEventListener('DOMContentLoaded', boot);
+              setInterval(function(){ scan(); hideAds(); }, 1000);
             })();
         """
     }
