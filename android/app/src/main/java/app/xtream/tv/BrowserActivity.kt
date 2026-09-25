@@ -29,6 +29,8 @@ class BrowserActivity : Activity() {
     private var customView: View? = null
     private var customCallback: WebChromeClient.CustomViewCallback? = null
     private var homeHost: String = ""
+    @Volatile
+    private var pageHost: String = ""
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -52,7 +54,22 @@ class BrowserActivity : Activity() {
         web.settings.setSupportZoom(true)
         web.settings.builtInZoomControls = false
         web.settings.allowFileAccess = false
+        web.settings.allowContentAccess = false
+        web.settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
+        @Suppress("DEPRECATION")
+        web.settings.allowFileAccessFromFileURLs = false
+        @Suppress("DEPRECATION")
+        web.settings.allowUniversalAccessFromFileURLs = false
+        if (android.os.Build.VERSION.SDK_INT >= 26) {
+            web.settings.safeBrowsingEnabled = true
+        }
         web.settings.javaScriptCanOpenWindowsAutomatically = false
+        web.setDownloadListener { _, _, _, _, _ -> }
+        web.isLongClickable = false
+        web.setOnLongClickListener { true }
+        val cookies = android.webkit.CookieManager.getInstance()
+        cookies.setAcceptCookie(true)
+        cookies.setAcceptThirdPartyCookies(web, false)
         web.setBackgroundColor(0xFF02030A.toInt())
         web.addJavascriptInterface(VideoBridge(), "Xtream")
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
@@ -98,11 +115,18 @@ class BrowserActivity : Activity() {
                 titleView.text = title?.ifBlank { web.url } ?: web.url
                 refreshSave()
             }
+
+            override fun onGeolocationPermissionsShowPrompt(
+                origin: String?,
+                callback: android.webkit.GeolocationPermissions.Callback?,
+            ) {
+                callback?.invoke(origin, false, false)
+            }
         }
         web.webChromeClient = chromeClient
         web.webViewClient = object : WebViewClient() {
             override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
-                return if (AdBlock.blocks(this@BrowserActivity, request.url, request.isForMainFrame)) {
+                return if (AdBlock.blocked(this@BrowserActivity, request.url, pageHost, request.isForMainFrame, request.requestHeaders)) {
                     AdBlock.emptyResponse()
                 } else {
                     null
@@ -110,8 +134,7 @@ class BrowserActivity : Activity() {
             }
 
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                val scheme = request.url.scheme?.lowercase()
-                if (scheme != "http" && scheme != "https") return true
+                if (AdBlock.isUnsafe(request.url) || AdBlock.isDownload(request.url)) return true
                 if (request.isForMainFrame && !sameSite(request.url.host) && AdBlock.isAd(this@BrowserActivity, request.url)) {
                     return true
                 }
@@ -120,6 +143,8 @@ class BrowserActivity : Activity() {
 
             override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
                 val uri = Uri.parse(url)
+                val host = uri.host?.lowercase()?.removePrefix("www.").orEmpty()
+                if (host.isNotBlank() && !AdBlock.isAd(this@BrowserActivity, uri)) pageHost = host
                 if (!sameSite(uri.host) && AdBlock.isAd(this@BrowserActivity, uri) && view.canGoBack()) {
                     view.stopLoading()
                     view.goBack()
@@ -172,6 +197,7 @@ class BrowserActivity : Activity() {
             return
         }
         homeHost = Uri.parse(start).host?.lowercase()?.removePrefix("www.").orEmpty()
+        pageHost = homeHost
         titleView.text = start
         web.loadUrl(start)
         web.requestFocus()
@@ -295,11 +321,22 @@ class BrowserActivity : Activity() {
               function hideAds(){
                 if (window.__xtreamAds === false) return;
                 if (!document.body) return;
-                document.querySelectorAll('iframe,ins,script,a').forEach(function(node){
+                var page = location.hostname.replace(/^www\./, '');
+                document.querySelectorAll('iframe,ins').forEach(function(node){
                   if (node.closest && node.closest('video')) return;
-                  var src = node.src || node.getAttribute('src') || node.href || '';
-                  if (!isAd(src)) return;
-                  node.remove();
+                  var src = node.src || node.getAttribute('src') || '';
+                  if (isAd(src)) { node.remove(); return; }
+                  var host = '';
+                  try { host = new URL(src, location.href).hostname.replace(/^www\./, ''); } catch (e) {}
+                  if (host && host !== page && host.slice(-page.length - 1) !== '.' + page) node.remove();
+                });
+                document.querySelectorAll('body *').forEach(function(node){
+                  if (!node || node.tagName === 'VIDEO' || node.querySelector('video')) return;
+                  var st;
+                  try { st = getComputedStyle(node); } catch (e) { return; }
+                  if (st.position !== 'fixed' && st.position !== 'sticky') return;
+                  var box = node.getBoundingClientRect();
+                  if (box.width > 220 && box.height > 90) node.remove();
                 });
               }
               function boot(){

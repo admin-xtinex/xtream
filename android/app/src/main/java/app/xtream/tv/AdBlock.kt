@@ -2,9 +2,8 @@ package app.xtream.tv
 
 import android.content.Context
 import android.net.Uri
-import java.io.ByteArrayInputStream
-import java.util.Collections
 import android.webkit.WebResourceResponse
+import java.io.ByteArrayInputStream
 
 object AdBlock {
     private const val prefs = "xtream"
@@ -41,15 +40,65 @@ object AdBlock {
         return false
     }
 
-    fun emptyResponse(): WebResourceResponse =
-        WebResourceResponse(
+    fun blocked(
+        context: Context,
+        url: Uri,
+        pageHost: String,
+        mainFrame: Boolean,
+        headers: Map<String, String> = emptyMap(),
+    ): Boolean {
+        if (isUnsafe(url) || isDownload(url)) return true
+        if (!enabled(context)) return false
+        if (isMedia(url, headers)) return false
+        if (isAd(context, url)) return true
+        if (mainFrame) return false
+        val host = url.host?.lowercase()?.removePrefix("www.") ?: return false
+        if (sameSite(host, pageHost) || isAllowedCdn(host)) return false
+        return true
+    }
+
+    fun isUnsafe(url: Uri): Boolean {
+        val scheme = url.scheme?.lowercase()
+        return scheme != "http" && scheme != "https"
+    }
+
+    fun isDownload(url: Uri): Boolean {
+        val path = url.path?.lowercase()?.substringBefore('?') ?: return false
+        val name = path.substringAfterLast('/')
+        val ext = name.substringAfterLast('.', "")
+        return ext in downloads
+    }
+
+    private fun isMedia(url: Uri, headers: Map<String, String>): Boolean {
+        val accept = headers.entries.firstOrNull { it.key.equals("Accept", true) }?.value?.lowercase().orEmpty()
+        if (accept.contains("mpegurl") || accept.contains("audio/") || accept.contains("video/")) return true
+        val path = (url.path ?: "").lowercase()
+        if (path.contains(".m3u8") || path.contains(".mpd") || path.contains("/hls/") || path.contains("/dash/")) return true
+        val ext = path.substringBefore('?').substringAfterLast('.', "")
+        return ext in media
+    }
+
+    private fun sameSite(host: String, pageHost: String): Boolean {
+        if (pageHost.isBlank()) return true
+        return host == pageHost || host.endsWith(".$pageHost") || pageHost.endsWith(".$host")
+    }
+
+    private fun isAllowedCdn(host: String): Boolean = cdn.any { host == it || host.endsWith(".$it") || host.contains(it) }
+
+    fun emptyResponse(): WebResourceResponse {
+        val headers = HashMap<String, String>()
+        headers["Content-Type"] = "text/plain"
+        headers["Cache-Control"] = "no-store"
+        headers["Access-Control-Allow-Origin"] = "*"
+        return WebResourceResponse(
             "text/plain",
             "utf-8",
-            200,
-            "OK",
-            Collections.emptyMap(),
+            403,
+            "Blocked",
+            headers,
             ByteArrayInputStream(ByteArray(0)),
         )
+    }
 
     private fun hosts(context: Context): Set<String> {
         val ready = hosts
@@ -142,5 +191,39 @@ object AdBlock {
         "banner-ads",
         "adservice",
         "adserver",
+    )
+
+    private val media = setOf(
+        "m3u8", "mpd", "ts", "m4s", "mp4", "webm", "mkv", "mov", "m4v",
+        "mp3", "aac", "m4a", "ogg", "opus", "vtt", "srt",
+    )
+
+    private val downloads = setOf(
+        "apk", "xapk", "aab", "zip", "rar", "7z", "exe", "msi", "dmg", "pkg",
+        "iso", "torrent", "bin", "deb", "rpm", "gz", "tgz", "tar", "xz", "crx",
+        "bat", "cmd", "sh", "jar", "cab",
+    )
+
+    private val cdn = listOf(
+        "googlevideo.com",
+        "ytimg.com",
+        "ggpht.com",
+        "gvt1.com",
+        "youtube.com",
+        "vimeo.com",
+        "vimeocdn.com",
+        "dailymotion.com",
+        "dmcdn.net",
+        "jwpcdn.com",
+        "jwplayer.com",
+        "jwpltx.com",
+        "bitmovin.com",
+        "mux.com",
+        "cloudfront.net",
+        "akamaihd.net",
+        "akamaized.net",
+        "fastly.net",
+        "gstatic.com",
+        "googleapis.com",
     )
 }

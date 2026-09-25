@@ -103,11 +103,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          notes="Ad blocking stops known ad-network requests and popunders before the page runs."
-          if gh release view v1.4.0 >/dev/null 2>&1; then
-            gh release upload v1.4.0 xtream-tv.apk xtream-mobile.apk --clobber
+          notes="Blocks third-party ads and popups. Downloads are refused. Pages load over HTTPS."
+          if gh release view v1.5.0 >/dev/null 2>&1; then
+            gh release upload v1.5.0 xtream-tv.apk xtream-mobile.apk --clobber
           else
-            gh release create v1.4.0 xtream-tv.apk xtream-mobile.apk \
-              --title "Xtream 1.4.0" \
+            gh release create v1.5.0 xtream-tv.apk xtream-mobile.apk \
+              --title "Xtream 1.5.0" \
               --notes "$notes"
           fi
