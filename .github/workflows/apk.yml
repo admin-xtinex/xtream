@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      suggested_urls:
+        description: "Suggested links, one per line as Name|https://example.com. Overrides the XTREAM_URLS variable for this build."
+        required: false
+        type: string
 
 jobs:
   apk:
@@ -33,6 +38,20 @@ jobs:
           SM="$SDK/cmdline-tools/latest/bin/sdkmanager"
           yes | "$SM" --sdk_root="$SDK" --licenses >/dev/null || true
           "$SM" --sdk_root="$SDK" --install "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Apply suggested URLs
+        env:
+          FROM_INPUT: ${{ inputs.suggested_urls }}
+          FROM_VAR: ${{ vars.XTREAM_URLS }}
+        run: |
+          set -euo pipefail
+          file="android/app/src/main/assets/suggested.txt"
+          mkdir -p "$(dirname "$file")"
+          if [ -n "${FROM_INPUT:-}" ]; then
+            printf '%s\n' "${FROM_INPUT}" > "$file"
+          elif [ -n "${FROM_VAR:-}" ]; then
+            printf '%s\n' "${FROM_VAR}" > "$file"
+          fi
 
       - name: Assemble debug APK
         working-directory: android

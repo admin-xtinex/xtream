@@ -40,13 +40,15 @@ class MainActivity : Activity() {
             }
         }
         val shortcuts = findViewById<LinearLayout>(R.id.shortcuts)
-        listOf(
-            "Wikipedia" to "https://www.wikipedia.org",
-            "Internet Archive" to "https://archive.org",
-            "NASA" to "https://www.nasa.gov",
-            "Example" to "https://example.com",
-        ).forEach { (label, url) ->
-            shortcuts.addView(tile(label) { open(url, label) })
+        val links = Suggested.load(this).ifEmpty {
+            listOf(
+                Entry("https://www.wikipedia.org", "Wikipedia"),
+                Entry("https://archive.org", "Internet Archive"),
+                Entry("https://www.nasa.gov", "NASA"),
+            )
+        }
+        links.forEach { entry ->
+            shortcuts.addView(tile(entry.title) { open(entry.url, entry.title) })
         }
         address.requestFocus()
     }

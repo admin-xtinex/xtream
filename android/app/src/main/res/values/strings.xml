@@ -4,7 +4,7 @@
     <string name="address_hint">Search or enter an address</string>
     <string name="go">Go</string>
     <string name="bookmarks">Bookmarks</string>
-    <string name="open">Open</string>
+    <string name="open">Suggested</string>
     <string name="recent">Recent</string>
     <string name="home">Home</string>
     <string name="save">Save</string>
