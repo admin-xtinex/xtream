@@ -128,7 +128,7 @@ class BrowserActivity : Activity() {
         web.webViewClient = object : WebViewClient() {
             override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
                 return if (AdBlock.blocked(this@BrowserActivity, request.url, pageHost, request.isForMainFrame, request.requestHeaders)) {
-                    AdBlock.emptyResponse()
+                    AdBlock.emptyResponse(request.url)
                 } else {
                     null
                 }
@@ -304,7 +304,21 @@ class BrowserActivity : Activity() {
               function hook(v){
                 if (!v || v.__xtream) return;
                 v.__xtream = true;
+                var userSeek = false;
+                v.addEventListener('pointerdown', function(){ userSeek = true; setTimeout(function(){ userSeek = false; }, 1200); });
+                v.addEventListener('timeupdate', function(){
+                  if (v.currentTime > 5) v.__xtreamPos = v.currentTime;
+                });
+                v.addEventListener('seeked', function(){
+                  if (window.__xtreamAds === false || userSeek || v.__xtreamHold) return;
+                  if ((v.__xtreamPos || 0) > 15 && v.currentTime < 1) {
+                    v.__xtreamHold = true;
+                    try { v.currentTime = v.__xtreamPos; } catch (e) {}
+                    setTimeout(function(){ v.__xtreamHold = false; }, 500);
+                  }
+                });
                 v.addEventListener('play', function(){
+                  if (window.__xtreamAds !== false && isAd(v.currentSrc || '')) return;
                   var box = v.getBoundingClientRect();
                   if (box.width < 200 && box.height < 120) return;
                   try {
@@ -314,6 +328,7 @@ class BrowserActivity : Activity() {
                   try { Xtream.onVideoPlay(); } catch (e) {}
                 });
                 v.addEventListener('ended', function(){
+                  if (window.__xtreamAds !== false && isAd(v.currentSrc || '')) return;
                   try { Xtream.onVideoEnd(); } catch (e) {}
                 });
               }

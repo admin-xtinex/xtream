@@ -49,7 +49,6 @@ object AdBlock {
     ): Boolean {
         if (isUnsafe(url) || isDownload(url)) return true
         if (!enabled(context)) return false
-        if (isMedia(url, headers)) return false
         if (isAd(context, url)) return true
         return false
     }
@@ -67,11 +66,9 @@ object AdBlock {
         if (extension(path) in downloads) return true
         if (!enabled) return false
         if (mainFrame) return false
-        if (accept.lowercase().let { it.contains("mpegurl") || it.contains("audio/") || it.contains("video/") }) return false
-        if (path.contains(".m3u8") || path.contains(".mpd") || path.contains("/hls/") || path.contains("/dash/")) return false
-        if (extension(path) in media) return false
         val host = uri.host?.lowercase()?.removePrefix("www.").orEmpty()
-        return needles.any { host.contains(it) }
+        if (needles.any { host.contains(it) }) return true
+        return false
     }
 
     fun isUnsafe(url: Uri): Boolean {
@@ -107,18 +104,22 @@ object AdBlock {
 
     private fun isAllowedCdn(host: String): Boolean = cdn.any { host == it || host.endsWith(".$it") || host.contains(it) }
 
-    fun emptyResponse(): WebResourceResponse {
+    fun emptyResponse(url: Uri? = null): WebResourceResponse {
+        val raw = url?.toString()?.lowercase().orEmpty()
+        val vast = listOf("vast", "gampad", "imasdk", "adtag", "vast.xml").any { raw.contains(it) }
+        val body = if (vast) "<VAST version=\"3.0\"></VAST>" else ""
+        val type = if (vast) "text/xml" else "text/plain"
         val headers = HashMap<String, String>()
-        headers["Content-Type"] = "text/plain"
+        headers["Content-Type"] = type
         headers["Cache-Control"] = "no-store"
         headers["Access-Control-Allow-Origin"] = "*"
         return WebResourceResponse(
-            "text/plain",
+            type,
             "utf-8",
-            403,
-            "Blocked",
+            200,
+            "OK",
             headers,
-            ByteArrayInputStream(ByteArray(0)),
+            ByteArrayInputStream(body.toByteArray()),
         )
     }
 
@@ -199,6 +200,8 @@ object AdBlock {
         "highrevenue",
         "serving-sys",
         "imasdk.googleapis",
+        "pubads",
+        "gampad",
         "fundingchoices",
         "pagead",
         "securepubads",

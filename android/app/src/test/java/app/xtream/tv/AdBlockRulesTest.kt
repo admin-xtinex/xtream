@@ -12,6 +12,7 @@ class AdBlockRulesTest {
         assertFalse(AdBlock.wouldBlock(true, "https://player.example.com/hls/playlist", false, "application/vnd.apple.mpegurl"))
         assertFalse(AdBlock.wouldBlock(true, "https://videosite.com/watch", true))
         assertFalse(AdBlock.wouldBlock(true, "https://player.example.com/embed.js", false))
+        assertTrue(AdBlock.wouldBlock(true, "https://pubads.g.doubleclick.net/gampad/ads?output=vast", false))
     }
 
     @Test
