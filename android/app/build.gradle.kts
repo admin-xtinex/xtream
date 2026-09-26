@@ -11,8 +11,8 @@ android {
         applicationId = "app.xtream.tv"
         minSdk = 24
         targetSdk = 35
-        versionCode = 15
-        versionName = "2.4.0"
+        versionCode = 16
+        versionName = "2.5.0"
     }
 
     flavorDimensions += "device"
@@ -27,10 +27,25 @@ android {
         }
     }
 
+    signingConfigs {
+        create("sideload") {
+            storeFile = file("xtream-sideload.jks")
+            storePassword = "xtream-sideload"
+            keyAlias = "xtream"
+            keyPassword = "xtream-sideload"
+            enableV1Signing = true
+            enableV2Signing = true
+            enableV3Signing = true
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("sideload")
+        }
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("sideload")
         }
     }
 

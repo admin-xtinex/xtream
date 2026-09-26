@@ -77,15 +77,15 @@ jobs:
         working-directory: android
         run: chmod +x ./gradlew && ./gradlew :app:testTvDebugUnitTest --no-daemon --stacktrace
 
-      - name: Assemble debug APKs
+      - name: Assemble release APKs
         working-directory: android
-        run: chmod +x ./gradlew && ./gradlew :app:assembleDebug --no-daemon --stacktrace
+        run: chmod +x ./gradlew && ./gradlew :app:assembleRelease --no-daemon --stacktrace
 
       - name: Collect APKs
         run: |
           set -euo pipefail
-          cp android/app/build/outputs/apk/tv/debug/app-tv-debug.apk xtream-tv.apk
-          cp android/app/build/outputs/apk/mobile/debug/app-mobile-debug.apk xtream-mobile.apk
+          cp android/app/build/outputs/apk/tv/release/app-tv-release.apk xtream-tv.apk
+          cp android/app/build/outputs/apk/mobile/release/app-mobile-release.apk xtream-mobile.apk
 
       - name: Upload APKs
         uses: actions/upload-artifact@v4
@@ -101,11 +101,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          notes="Download sits on the video. Only a direct video file is saved. Loading shows only while a page opens."
-          if gh release view v2.4.0 >/dev/null 2>&1; then
-            gh release upload v2.4.0 xtream-tv.apk xtream-mobile.apk --clobber
+          notes="Release APK signed for Android TV sideload, including older Thomson installers. Uninstall any older Xtream first if the TV says the app is not installed."
+          if gh release view v2.5.0 >/dev/null 2>&1; then
+            gh release upload v2.5.0 xtream-tv.apk xtream-mobile.apk --clobber
           else
-            gh release create v2.4.0 xtream-tv.apk xtream-mobile.apk \
-              --title "Xtream 2.4.0" \
+            gh release create v2.5.0 xtream-tv.apk xtream-mobile.apk \
+              --title "Xtream 2.5.0" \
               --notes "$notes"
           fi
