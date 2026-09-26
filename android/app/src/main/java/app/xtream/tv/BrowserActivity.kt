@@ -25,6 +25,7 @@ import androidx.webkit.WebViewFeature
 class BrowserActivity : Activity() {
     private lateinit var web: WebView
     private lateinit var chrome: View
+    private lateinit var download: Button
     private lateinit var gate: View
     private lateinit var loadRing: View
     private lateinit var titleView: TextView
@@ -43,6 +44,7 @@ class BrowserActivity : Activity() {
         setContentView(R.layout.activity_browser)
         web = findViewById(R.id.web)
         chrome = findViewById(R.id.chrome)
+        download = findViewById(R.id.download)
         gate = findViewById(R.id.gate)
         loadRing = findViewById(R.id.load_ring)
         titleView = findViewById(R.id.page_title)
@@ -105,6 +107,7 @@ class BrowserActivity : Activity() {
                         ),
                     )
                 }
+                showDownload()
             }
 
             override fun onHideCustomView() {
@@ -113,6 +116,7 @@ class BrowserActivity : Activity() {
                 customView = null
                 customCallback?.onCustomViewHidden()
                 customCallback = null
+                hideDownload()
                 chrome.visibility = View.VISIBLE
                 if (!isTv) {
                     requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
@@ -198,6 +202,7 @@ class BrowserActivity : Activity() {
             refreshSave()
         }
         findViewById<Button>(R.id.video).setOnClickListener { saveCurrentVideo() }
+        download.setOnClickListener { saveCurrentVideo() }
         home.setOnKeyListener { _, keyCode, event ->
             event.action == KeyEvent.ACTION_DOWN && keyCode == KeyEvent.KEYCODE_DPAD_DOWN && web.requestFocus()
         }
@@ -247,11 +252,18 @@ class BrowserActivity : Activity() {
         save.text = getString(if (saved) R.string.saved else R.string.save)
     }
 
+    private fun showDownload() {
+        download.visibility = View.VISIBLE
+        download.bringToFront()
+    }
+
+    private fun hideDownload() {
+        download.visibility = View.GONE
+    }
+
     private fun saveCurrentVideo() {
-        web.evaluateJavascript(
-            "(function(){var v=document.querySelector('video');return v?(v.currentSrc||v.src||''):'';})()",
-        ) { raw ->
-            val url = raw?.trim()?.removeSurrounding("\"")?.replace("\\/", "/").orEmpty()
+        web.evaluateJavascript(CURRENT_SRC) { raw ->
+            val url = raw?.trim()?.removeSurrounding("\"")?.replace("\\/", "/")?.replace("\\\"", "\"").orEmpty()
             saveVideoFile(url, CHROME_AGENT, null)
         }
     }
@@ -318,6 +330,7 @@ class BrowserActivity : Activity() {
             return
         }
         chrome.visibility = View.VISIBLE
+        hideDownload()
         if (!resources.getBoolean(R.bool.is_television)) {
             requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
         }
@@ -328,9 +341,16 @@ class BrowserActivity : Activity() {
         fun adsOn(): Boolean = AdBlock.enabled(this@BrowserActivity)
 
         @JavascriptInterface
+        fun download(raw: String?) {
+            val url = raw.orEmpty()
+            runOnUiThread { saveVideoFile(url, CHROME_AGENT, null) }
+        }
+
+        @JavascriptInterface
         fun onVideoPlay() {
             runOnUiThread {
                 chrome.visibility = View.GONE
+                if (customView != null) showDownload()
                 if (!resources.getBoolean(R.bool.is_television)) {
                     requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
                 }
@@ -439,11 +459,53 @@ class BrowserActivity : Activity() {
                     else if (v.requestFullscreen) v.requestFullscreen();
                   } catch (e) {}
                   try { Xtream.onVideoPlay(); } catch (e) {}
+                  placeDownload();
                 });
                 v.addEventListener('ended', function(){
                   if (window.__xtreamAds !== false && isAd(v.currentSrc || v.src || '')) return;
                   try { Xtream.onVideoEnd(); } catch (e) {}
                 });
+              }
+              function placeDownload(){
+                if (!document.documentElement) return;
+                var best = null;
+                var area = 0;
+                document.querySelectorAll('video').forEach(function(v){
+                  var src = v.currentSrc || v.src || '';
+                  if (isAd(src)) return;
+                  var box = v.getBoundingClientRect();
+                  var size = box.width * box.height;
+                  if (box.width > 160 && box.height > 90 && size > area) {
+                    area = size;
+                    best = v;
+                  }
+                });
+                var btn = document.getElementById('xtream-dl');
+                if (!best) {
+                  if (btn) btn.style.display = 'none';
+                  return;
+                }
+                window.__xtreamVideo = best;
+                if (!btn) {
+                  btn = document.createElement('button');
+                  btn.id = 'xtream-dl';
+                  btn.type = 'button';
+                  btn.textContent = 'Download';
+                  btn.style.cssText = 'position:fixed;z-index:2147483646;border:0;border-radius:14px;background:#3ecbff;color:#041018;font:700 16px sans-serif;padding:12px 18px;min-height:48px;min-width:48px;';
+                  btn.addEventListener('click', function(ev){
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                    var src = '';
+                    try { src = window.__xtreamVideo.currentSrc || window.__xtreamVideo.src || ''; } catch (e) {}
+                    try { Xtream.download(src); } catch (e2) {}
+                  });
+                  document.documentElement.appendChild(btn);
+                }
+                var box = best.getBoundingClientRect();
+                btn.style.display = 'block';
+                var width = btn.offsetWidth || 128;
+                btn.style.left = Math.max(12, box.right - width - 16) + 'px';
+                btn.style.top = Math.max(12, box.bottom - 64) + 'px';
               }
               function scan(){
                 if (!document.body) return;
@@ -492,8 +554,24 @@ class BrowserActivity : Activity() {
               }
               boot();
               document.addEventListener('DOMContentLoaded', boot);
-              setInterval(function(){ scan(); hideAds(); }, 1000);
+              setInterval(function(){ scan(); hideAds(); placeDownload(); }, 1000);
             })();
+        """
+        private const val CURRENT_SRC = """
+            (function(){
+              var best = '';
+              var area = 0;
+              var list = document.querySelectorAll('video');
+              for (var i = 0; i < list.length; i++) {
+                var v = list[i];
+                var src = v.currentSrc || v.src || '';
+                if (!src) continue;
+                var box = v.getBoundingClientRect();
+                var size = box.width * box.height;
+                if (size >= area) { area = size; best = src; }
+              }
+              return best;
+            })()
         """
     }
 }

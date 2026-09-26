@@ -101,11 +101,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          notes="Small WebView build. Loading shows only while a page opens. Ad requests stay blocked in the background, including ad videos in the player."
-          if gh release view v2.3.0 >/dev/null 2>&1; then
-            gh release upload v2.3.0 xtream-tv.apk xtream-mobile.apk --clobber
+          notes="Download sits on the video. Only a direct video file is saved. Loading shows only while a page opens."
+          if gh release view v2.4.0 >/dev/null 2>&1; then
+            gh release upload v2.4.0 xtream-tv.apk xtream-mobile.apk --clobber
           else
-            gh release create v2.3.0 xtream-tv.apk xtream-mobile.apk \
-              --title "Xtream 2.3.0" \
+            gh release create v2.4.0 xtream-tv.apk xtream-mobile.apk \
+              --title "Xtream 2.4.0" \
               --notes "$notes"
           fi
