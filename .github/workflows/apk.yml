@@ -101,11 +101,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          notes="Cursor scrolls pages and sidebars at the screen edge, including to the bottom. Up always gets back to Home after a video. Security hardening: no LAN access for pages, no debugging in release, outdated-engine warning."
-          if gh release view v2.6.1 >/dev/null 2>&1; then
-            gh release upload v2.6.1 xtream-tv.apk xtream-mobile.apk --clobber
+          notes="Video plays at the best quality by default: 1080p minimum when the stream has it, up to 4K. The TV now loads desktop sites instead of phone ones. Pick a fixed quality in Options, Video Quality."
+          if gh release view v2.7.0 >/dev/null 2>&1; then
+            gh release upload v2.7.0 xtream-tv.apk xtream-mobile.apk --clobber
           else
-            gh release create v2.6.1 xtream-tv.apk xtream-mobile.apk \
-              --title "Xtream 2.6.1" \
+            gh release create v2.7.0 xtream-tv.apk xtream-mobile.apk \
+              --title "Xtream 2.7.0" \
               --notes "$notes"
           fi

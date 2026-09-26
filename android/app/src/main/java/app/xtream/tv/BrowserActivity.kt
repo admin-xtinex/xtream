@@ -80,7 +80,8 @@ class BrowserActivity : Activity() {
         web.settings.javaScriptEnabled = true
         web.settings.domStorageEnabled = true
         web.settings.mediaPlaybackRequiresUserGesture = false
-        web.settings.userAgentString = CHROME_AGENT
+        // A phone identity gets phone players that start at 360p, so the TV presents as desktop Chrome.
+        web.settings.userAgentString = if (isTv) desktopAgent() else CHROME_AGENT
         web.settings.useWideViewPort = true
         web.settings.loadWithOverviewMode = true
         web.settings.setSupportZoom(true)
@@ -347,6 +348,16 @@ class BrowserActivity : Activity() {
         web.requestFocus()
     }
 
+    /** Desktop Chrome identity carrying the real engine version. */
+    private fun desktopAgent(): String {
+        val engine = try {
+            Regex("Chrome/[0-9.]+").find(android.webkit.WebSettings.getDefaultUserAgent(this))?.value
+        } catch (_: Exception) {
+            null
+        } ?: "Chrome/131.0.0.0"
+        return "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) $engine Safari/537.36"
+    }
+
     private fun showLoad() {
         gate.visibility = View.VISIBLE
         loadRing.startAnimation(AnimationUtils.loadAnimation(this, R.anim.spin))
@@ -389,7 +400,7 @@ class BrowserActivity : Activity() {
             "⏪ Rewind 10s",
             "⏩ Forward 10s",
             "⏭ Next Episode / Server",
-            "📺 Video Quality (1080p, 720p...)",
+            "📺 Video Quality (Best, 1080p, 720p...)",
             "⚡ Playback Speed",
             "📐 Aspect Ratio",
         )
@@ -420,13 +431,18 @@ class BrowserActivity : Activity() {
     }
 
     private fun showQualityDialog() {
-        val qualities = arrayOf("Auto", "1080p", "720p", "480p", "360p")
+        val labels = arrayOf("Best (1080p minimum, up to 4K)", "1080p", "720p", "480p", "360p", "Auto (site decides)")
+        val values = arrayOf("best", "1080", "720", "480", "360", "auto")
+        val current = values.indexOf(VideoQuality.get(this)).coerceAtLeast(0)
         android.app.AlertDialog.Builder(this)
-            .setTitle("Select Video Quality")
-            .setItems(qualities) { _, which ->
-                val q = qualities[which].lowercase().replace("p", "")
-                web.evaluateJavascript("window.__xtreamSetQuality && window.__xtreamSetQuality('$q')", null)
-                android.widget.Toast.makeText(this, "Quality: ${qualities[which]}", android.widget.Toast.LENGTH_SHORT).show()
+            .setTitle("Video Quality")
+            .setSingleChoiceItems(labels, current) { dialog, which ->
+                val q = values[which]
+                VideoQuality.set(this, q)
+                web.evaluateJavascript("window.__xtreamApplyQuality && window.__xtreamApplyQuality('$q')", null)
+                web.evaluateJavascript("window.__xtreamSetQuality && window.__xtreamSetQuality('${if (q == "best") "1080" else q}')", null)
+                android.widget.Toast.makeText(this, "Quality: ${labels[which]}", android.widget.Toast.LENGTH_SHORT).show()
+                dialog.dismiss()
             }
             .show()
     }
@@ -674,6 +690,9 @@ class BrowserActivity : Activity() {
         fun adsOn(): Boolean = AdBlock.enabled(this@BrowserActivity)
 
         @JavascriptInterface
+        fun quality(): String = VideoQuality.get(this@BrowserActivity)
+
+        @JavascriptInterface
         fun onVideoPlay() {
             runOnUiThread {
                 chrome.visibility = View.GONE
@@ -708,6 +727,175 @@ class BrowserActivity : Activity() {
             (function(){
               if (window.__xtreamHook) return;
               window.__xtreamHook = true;
+              // --- Video quality: aim high instead of the player's cautious low start ---
+              (function(){
+                var q = 'best';
+                try { q = String(Xtream.quality()); } catch (e) {}
+                window.__xtreamQuality = q;
+                var hlsList = [];
+                function target(){
+                  var v = window.__xtreamQuality;
+                  if (v === 'auto') return 0;
+                  if (v === 'best') return 100000;
+                  var n = parseInt(v, 10);
+                  return isNaN(n) ? 0 : n;
+                }
+                function heightOf(level){
+                  if (!level) return 0;
+                  if (level.height) return level.height;
+                  var m = String(level.label || level.name || '').match(/(\d{3,4})\s*p/i);
+                  if (m) return parseInt(m[1], 10);
+                  if (/4k|uhd/i.test(String(level.label || ''))) return 2160;
+                  return 0;
+                }
+                // Tallest level at or under the wanted height, else the smallest one.
+                function pick(levels){
+                  var want = target();
+                  if (!want || !levels || !levels.length) return -1;
+                  var best = -1, bestH = -1, low = -1, lowH = 1e9;
+                  for (var i = 0; i < levels.length; i++) {
+                    var h = heightOf(levels[i]);
+                    if (!h) continue;
+                    if (h <= want && h > bestH) { best = i; bestH = h; }
+                    if (h < lowH) { low = i; lowH = h; }
+                  }
+                  return best >= 0 ? best : low;
+                }
+                // With Best, never let adaptive playback fall under 1080p when the stream has it.
+                function floorIndex(levels, top){
+                  var topH = heightOf(levels[top]);
+                  var want = Math.min(topH, 1080);
+                  var idx = top, idxH = topH;
+                  for (var i = 0; i < levels.length; i++) {
+                    var h = heightOf(levels[i]);
+                    if (h >= want && h < idxH) { idx = i; idxH = h; }
+                  }
+                  return idx;
+                }
+                function applyHls(h){
+                  try {
+                    var levels = h.levels || [];
+                    var idx = pick(levels);
+                    if (idx < 0) {
+                      h.config.minAutoBitrate = 0;
+                      h.currentLevel = -1;
+                      return;
+                    }
+                    h.autoLevelCapping = -1;
+                    if (window.__xtreamQuality === 'best') {
+                      var floor = levels[floorIndex(levels, idx)];
+                      h.config.minAutoBitrate = floor && floor.bitrate ? floor.bitrate - 1 : 0;
+                      h.currentLevel = -1;
+                      h.nextLevel = idx;
+                    } else {
+                      h.config.minAutoBitrate = 0;
+                      h.currentLevel = idx;
+                    }
+                  } catch (e) {}
+                }
+                function tuneHls(H){
+                  if (!H || typeof H !== 'function' || H.__xtreamTuned || typeof Reflect === 'undefined') return H;
+                  var W = function(cfg){
+                    cfg = cfg || {};
+                    if (target()) {
+                      cfg.capLevelToPlayerSize = false;
+                      if (!(cfg.abrEwmaDefaultEstimate > 8000000)) cfg.abrEwmaDefaultEstimate = 8000000;
+                      cfg.testBandwidth = false;
+                    }
+                    var h = Reflect.construct(H, [cfg], new.target || W);
+                    hlsList.push(h);
+                    try {
+                      var ev = (H.Events && H.Events.MANIFEST_PARSED) || 'hlsManifestParsed';
+                      h.on(ev, function(){ applyHls(h); });
+                    } catch (e) {}
+                    return h;
+                  };
+                  W.prototype = H.prototype;
+                  try { Object.setPrototypeOf(W, H); } catch (e) {}
+                  W.__xtreamTuned = true;
+                  return W;
+                }
+                try {
+                  var cur = tuneHls(window.Hls);
+                  Object.defineProperty(window, 'Hls', {
+                    configurable: true,
+                    enumerable: true,
+                    get: function(){ return cur; },
+                    set: function(v){ cur = tuneHls(v); }
+                  });
+                } catch (e) {}
+                function applyJw(){
+                  if (typeof window.jwplayer !== 'function') return;
+                  try {
+                    var jw = window.jwplayer();
+                    if (!jw || !jw.getQualityLevels) return;
+                    if (!jw.__xtreamQ) {
+                      jw.__xtreamQ = true;
+                      try { jw.on('levels', applyJw); } catch (e) {}
+                    }
+                    var levels = jw.getQualityLevels() || [];
+                    var idx = pick(levels);
+                    if (idx < 0) {
+                      for (var i = 0; i < levels.length; i++) {
+                        if (/auto/i.test(String(levels[i].label || ''))) idx = i;
+                      }
+                    }
+                    if (idx >= 0 && jw.getCurrentQuality() !== idx) jw.setCurrentQuality(idx);
+                  } catch (e) {}
+                }
+                function applyVideoJs(){
+                  if (!window.videojs || !window.videojs.getPlayers) return;
+                  try {
+                    var players = window.videojs.getPlayers();
+                    Object.keys(players).forEach(function(k){
+                      var p = players[k];
+                      if (!p || !p.qualityLevels) return;
+                      var ql = p.qualityLevels();
+                      var list = [];
+                      for (var i = 0; i < ql.length; i++) list.push(ql[i]);
+                      var idx = pick(list);
+                      var floor = idx >= 0 && window.__xtreamQuality === 'best' ? heightOf(list[floorIndex(list, idx)]) : 0;
+                      list.forEach(function(l, i){
+                        var h = heightOf(l);
+                        if (idx < 0) l.enabled = true;
+                        else if (floor) l.enabled = h >= floor && h <= heightOf(list[idx]);
+                        else l.enabled = i === idx;
+                      });
+                    });
+                  } catch (e) {}
+                }
+                function applyYouTube(){
+                  var mp = document.getElementById('movie_player');
+                  if (!mp || !mp.getAvailableQualityLevels || !mp.setPlaybackQualityRange) return;
+                  try {
+                    var names = mp.getAvailableQualityLevels() || [];
+                    var sizes = { highres: 4320, hd2160: 2160, hd1440: 1440, hd1080: 1080, hd720: 720, large: 480, medium: 360, small: 240, tiny: 144 };
+                    var levels = names.map(function(n){ return { height: sizes[n] || 0, name: n }; });
+                    var idx = pick(levels);
+                    if (idx < 0) mp.setPlaybackQualityRange('auto', 'auto');
+                    else mp.setPlaybackQualityRange(names[idx], names[idx]);
+                  } catch (e) {}
+                }
+                window.__xtreamApplyQuality = function(next){
+                  if (next) window.__xtreamQuality = String(next);
+                  hlsList.forEach(applyHls);
+                  applyJw();
+                  applyVideoJs();
+                  applyYouTube();
+                  if (next) {
+                    document.querySelectorAll('iframe').forEach(function(f){
+                      try { f.contentWindow.postMessage({ action: 'xtream-quality', quality: String(next) }, '*'); } catch (e) {}
+                    });
+                  }
+                };
+                window.addEventListener('message', function(ev){
+                  if (ev && ev.data && ev.data.action === 'xtream-quality') window.__xtreamApplyQuality(ev.data.quality);
+                });
+                // Players build their level lists a moment after playback starts.
+                window.__xtreamQualitySoon = function(){
+                  [300, 1500, 4000].forEach(function(ms){ setTimeout(function(){ window.__xtreamApplyQuality(); }, ms); });
+                };
+              })();
               // --- Cursor mode helpers ---
               window.__xtreamShowCursor = function(x, y) {
                 var c = document.getElementById('__xtream_cur');
@@ -862,7 +1050,11 @@ class BrowserActivity : Activity() {
                     if (v.currentSrc) v.__xtreamSrc = v.currentSrc;
                   }
                 });
+                v.addEventListener('loadedmetadata', function(){
+                  if (window.__xtreamQualitySoon) window.__xtreamQualitySoon();
+                });
                 v.addEventListener('play', function(){
+                  if (window.__xtreamQualitySoon) window.__xtreamQualitySoon();
                   if (window.__xtreamAds !== false && skipAd(v)) return;
                   var box = v.getBoundingClientRect();
                   if (box.width < 200 && box.height < 120) return;
