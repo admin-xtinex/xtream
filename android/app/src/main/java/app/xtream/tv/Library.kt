@@ -11,7 +11,21 @@ object Library {
     private const val bookmarksKey = "bookmarks"
     private const val historyKey = "history"
 
-    fun bookmarks(context: Context): List<Entry> = read(context, bookmarksKey)
+    private const val defaultBookmarkUrl = "https://ogomovies2.com.pk/"
+    private const val defaultBookmarkTitle = "OgoMovies"
+
+    fun bookmarks(context: Context): List<Entry> {
+        val sp = context.getSharedPreferences(prefs, Context.MODE_PRIVATE)
+        if (!sp.getBoolean("seeded_ogomovies_v1", false)) {
+            val current = read(context, bookmarksKey).toMutableList()
+            if (current.none { it.url == defaultBookmarkUrl || it.url == "https://ogomovies2.com.pk" }) {
+                current.add(0, Entry(defaultBookmarkUrl, defaultBookmarkTitle))
+                write(context, bookmarksKey, current)
+            }
+            sp.edit().putBoolean("seeded_ogomovies_v1", true).apply()
+        }
+        return read(context, bookmarksKey)
+    }
 
     fun history(context: Context): List<Entry> = read(context, historyKey)
 
@@ -30,10 +44,22 @@ object Library {
         write(context, bookmarksKey, bookmarks(context).filterNot { it.url == url })
     }
 
+    fun removeHistory(context: Context, url: String) {
+        write(context, historyKey, history(context).filterNot { it.url == url })
+    }
+
+    fun clearBookmarks(context: Context) {
+        write(context, bookmarksKey, emptyList())
+    }
+
+    fun clearHistory(context: Context) {
+        write(context, historyKey, emptyList())
+    }
+
     fun visit(context: Context, url: String, title: String) {
         val next = history(context).filterNot { it.url == url }.toMutableList()
         next.add(0, Entry(url, title.ifBlank { url }))
-        write(context, historyKey, next.take(20))
+        write(context, historyKey, next.take(40))
     }
 
     private fun read(context: Context, key: String): List<Entry> {

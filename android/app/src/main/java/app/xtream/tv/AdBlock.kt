@@ -30,7 +30,16 @@ object AdBlock {
         if (scheme != "http" && scheme != "https") return false
         val host = url.host?.lowercase()?.removePrefix("www.") ?: return false
         if (host.isBlank() || !host.contains('.')) return false
+
+        val path = url.path?.lowercase().orEmpty()
+        val ext = path.substringBefore('?').substringAfterLast('.', "")
+        if (ext in media) return false
+
         if (needles.any { host.contains(it) }) return true
+        if (pathNeedles.any { path.contains(it) }) return true
+        val full = url.toString().lowercase()
+        if (pathNeedles.any { full.contains(it) }) return true
+
         val list = hosts(context)
         var name = host
         while (name.contains('.')) {
@@ -49,6 +58,7 @@ object AdBlock {
     ): Boolean {
         if (isUnsafe(url) || isDownload(url)) return true
         if (!enabled(context)) return false
+        if (isMedia(url, headers)) return false
         if (isAd(context, url)) return true
         return false
     }
@@ -66,8 +76,17 @@ object AdBlock {
         if (extension(path) in downloads) return true
         if (!enabled) return false
         if (mainFrame) return false
+
+        val ext = extension(path)
+        if (ext in media) return false
+        val acceptLower = accept.lowercase()
+        if (acceptLower.contains("mpegurl") || acceptLower.contains("video/") || acceptLower.contains("audio/")) return false
+
         val host = uri.host?.lowercase()?.removePrefix("www.").orEmpty()
         if (needles.any { host.contains(it) }) return true
+        if (pathNeedles.any { path.contains(it) }) return true
+        val full = raw.lowercase()
+        if (pathNeedles.any { full.contains(it) }) return true
         return false
     }
 
@@ -249,6 +268,84 @@ object AdBlock {
         "banner-ads",
         "adservice",
         "adserver",
+        "createlouisville",
+        "bakestubborn",
+        "show-sb",
+        "show-creative",
+        "flushpersist",
+        "storageimagedisplay",
+        "spendsdetachment",
+        "streamtape",
+        "streamwish",
+        "filelions",
+        "doodstream",
+        "vidoza",
+        "mixdrop",
+        "whos.amung.us",
+        "histats",
+        "alwingulla",
+        "deloton",
+        "onclickprediction",
+        "syndication",
+        "propush",
+        "adtrue",
+        "ezodn",
+        "ezoic",
+        "adcash",
+        "popmyads",
+        "highrevenuegate",
+        "richinfo.co",
+        "connatix",
+        "ipredictive",
+        "ottadvisors",
+        "adscale",
+        "1rx.io",
+        "sonobi",
+        "loopme",
+        "yellowblue",
+        "gumgum",
+        "smaato",
+        "sitescout",
+        "copper6",
+        "postrelease",
+        "pmbmonetize",
+        "bidr.io",
+        "id5-sync",
+        "haginsensiblesupervise",
+        "portalfluently",
+        "newestfangs",
+        "bvtpk",
+        "luugy",
+    )
+
+    private val pathNeedles = listOf(
+        "/interstitial",
+        "/center_banner",
+        "/sspi/",
+        "/pixel/",
+        "/popunder",
+        "/popup",
+        "/gambling",
+        "/pxf.gif",
+        "/px.gif",
+        "/track.",
+        "/telemetry",
+        "/adtag",
+        "/adserver",
+        "/ads.js",
+        "/ad.js",
+        "/advert.js",
+        "/banners/",
+        "/vast.xml",
+        "/vpaid",
+        "/adunit",
+        "/ad_tag",
+        "ad_type=",
+        "zoneid=",
+        "clicktag",
+        "click_id=",
+        "/floating_banner",
+        "/sticky_ad",
     )
 
     private val media = setOf(

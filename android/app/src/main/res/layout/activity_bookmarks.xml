@@ -2,44 +2,72 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:background="#050714"
     android:orientation="vertical"
-    android:padding="36dp">
+    android:padding="@dimen/screen_padding">
 
-    <Button
-        android:id="@+id/back"
-        android:layout_width="wrap_content"
+    <LinearLayout
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@drawable/bg_tile"
-        android:minHeight="48dp"
-        android:text="@string/home"
-        android:textAllCaps="false"
-        android:textColor="#F4F7FF"
-        android:textSize="16sp" />
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
-        android:text="@string/bookmarks"
-        android:textColor="#F4F7FF"
-        android:textSize="32sp"
-        android:textStyle="bold" />
+        <Button
+            android:id="@+id/back"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/bg_tile"
+            android:minHeight="@dimen/action_btn_min_height"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:text="@string/home"
+            android:textAllCaps="false"
+            android:textColor="#F4F7FF"
+            android:textSize="16sp" />
+
+        <TextView
+            android:id="@+id/title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"
+            android:layout_weight="1"
+            android:singleLine="true"
+            android:text="@string/bookmarks"
+            android:textColor="#F4F7FF"
+            android:textSize="26sp"
+            android:textStyle="bold" />
+
+        <Button
+            android:id="@+id/clear_all"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/bg_tile"
+            android:minHeight="@dimen/action_btn_min_height"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:text="@string/clear_history"
+            android:textAllCaps="false"
+            android:textColor="#FF6B9D"
+            android:textSize="14sp"
+            android:visibility="gone" />
+    </LinearLayout>
 
     <TextView
         android:id="@+id/empty"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
+        android:layout_marginTop="24dp"
         android:text="@string/empty_bookmarks"
         android:textColor="#9AA8D4"
-        android:textSize="18sp"
+        android:textSize="16sp"
         android:visibility="gone" />
 
     <ScrollView
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_marginTop="12dp"
-        android:layout_weight="1">
+        android:layout_marginTop="16dp"
+        android:layout_weight="1"
+        android:scrollbars="none">
 
         <LinearLayout
             android:id="@+id/list"

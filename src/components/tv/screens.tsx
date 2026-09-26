@@ -1,14 +1,38 @@
 import { useEffect, useState } from "react";
 import { clsx } from "clsx";
 import {
+  Bookmark,
+  BookOpen,
+  Check,
+  Compass,
+  ExternalLink,
+  Flame,
+  Globe,
+  History as HistoryIcon,
   House,
+  Laptop,
+  Lock,
   Monitor,
+  Play,
+  PlaySquare,
+  Radio,
+  RefreshCw,
+  Rocket,
   RotateCw,
+  Search,
+  Settings as SettingsIcon,
+  Shield,
+  ShieldAlert,
+  ShieldCheck,
+  Sparkles,
   Star,
+  Trash2,
   Tv,
+  X,
+  Zap,
 } from "lucide-react";
 import { inspectCached, searchCached } from "@/lib/tv/cache";
-import type { HistoryEntry, Settings as SettingsModel } from "@/lib/tv/store";
+import type { Bookmark as BookmarkItem, HistoryEntry, Settings as SettingsModel } from "@/lib/tv/store";
 import { APP_VERSION, type InspectResult, type SearchHit } from "@/lib/tv/types";
 import {
   engineLabel,
@@ -20,26 +44,130 @@ import {
 } from "@/lib/tv/url";
 import { ago, BackButton, Screen, SectionLabel, TvButton } from "@/components/tv/ui";
 
-const SUGGESTED = [
-  { title: "Wikipedia", url: "https://www.wikipedia.org" },
-  { title: "Internet Archive", url: "https://archive.org" },
-  { title: "NASA", url: "https://www.nasa.gov" },
+export interface FeaturedChannel {
+  title: string;
+  url: string;
+  category: "Streaming" | "Knowledge" | "Space" | "Media" | "Community";
+  description: string;
+  iconName: string;
+  gradient: string;
+}
+
+const FEATURED_CHANNELS: FeaturedChannel[] = [
+  {
+    title: "OgoMovies",
+    url: "https://ogomovies2.com.pk/",
+    category: "Streaming",
+    description: "Watch latest movies and trending web series",
+    iconName: "play",
+    gradient: "from-amber-600 to-yellow-600",
+  },
+  {
+    title: "YouTube",
+    url: "https://www.youtube.com",
+    category: "Streaming",
+    description: "Videos, music, and livestreams for TV & mobile",
+    iconName: "play",
+    gradient: "from-red-600 to-rose-700",
+  },
+  {
+    title: "Wikipedia",
+    url: "https://www.wikipedia.org",
+    category: "Knowledge",
+    description: "The free, multilingual encyclopedia",
+    iconName: "book",
+    gradient: "from-slate-700 to-zinc-900",
+  },
+  {
+    title: "Internet Archive",
+    url: "https://archive.org",
+    category: "Knowledge",
+    description: "Millions of free books, movies, audio, and software",
+    iconName: "globe",
+    gradient: "from-blue-700 to-indigo-900",
+  },
+  {
+    title: "NASA TV",
+    url: "https://www.nasa.gov",
+    category: "Space",
+    description: "Live rocket launches, solar system missions, and deep space",
+    iconName: "rocket",
+    gradient: "from-sky-600 to-blue-800",
+  },
+  {
+    title: "Twitch",
+    url: "https://www.twitch.tv",
+    category: "Streaming",
+    description: "Live gameplay, esports broadcasts, and creator streams",
+    iconName: "radio",
+    gradient: "from-purple-700 to-violet-900",
+  },
+  {
+    title: "Reddit",
+    url: "https://www.reddit.com",
+    category: "Community",
+    description: "Trending conversations, news, and entertainment communities",
+    iconName: "compass",
+    gradient: "from-orange-600 to-amber-700",
+  },
+  {
+    title: "Open Library",
+    url: "https://openlibrary.org",
+    category: "Knowledge",
+    description: "Borrow and read digitized classics online",
+    iconName: "book",
+    gradient: "from-emerald-700 to-teal-900",
+  },
+  {
+    title: "DuckDuckGo",
+    url: "https://duckduckgo.com",
+    category: "Media",
+    description: "Privacy-focused search without user tracking",
+    iconName: "search",
+    gradient: "from-amber-600 to-orange-700",
+  },
 ];
+
+function ChannelIcon({ name }: { name: string }) {
+  switch (name) {
+    case "play":
+      return <PlaySquare className="size-6 text-white" />;
+    case "book":
+      return <BookOpen className="size-6 text-white" />;
+    case "rocket":
+      return <Rocket className="size-6 text-white" />;
+    case "radio":
+      return <Radio className="size-6 text-white" />;
+    case "compass":
+      return <Compass className="size-6 text-white" />;
+    case "search":
+      return <Search className="size-6 text-white" />;
+    default:
+      return <Globe className="size-6 text-white" />;
+  }
+}
 
 export function HomeScreen({
   engineName,
   history,
+  bookmarksCount = 0,
   onOpen,
   onBookmarks,
+  onHistory,
+  onSettings,
 }: {
   engineName: string;
   history: HistoryEntry[];
+  bookmarksCount?: number;
   onOpen: (url: string) => void;
   onBookmarks: () => void;
+  onHistory: () => void;
+  onSettings: () => void;
 }) {
   const [draft, setDraft] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
-  const recent = history.slice(0, 8);
+  const [selectedCategory, setSelectedCategory] = useState<string>("All");
+  const recent = history.slice(0, 10);
 
   function submit() {
     const resolved = resolveInput(draft);
@@ -52,75 +180,300 @@ export function HomeScreen({
     onOpen(resolved.kind === "url" ? resolved.url : draft);
   }
 
+  const filteredChannels =
+    selectedCategory === "All"
+      ? FEATURED_CHANNELS
+      : FEATURED_CHANNELS.filter((c) => c.category === selectedCategory);
+
   return (
     <Screen>
-      <div className="px-5 pt-6 pb-8">
-        <img src="/xtream-logo.png" alt="Xtream" className="h-24 w-auto max-w-full object-contain object-left" />
-        <form
-          className="mt-4"
-          onSubmit={(event) => {
-            event.preventDefault();
-            submit();
-          }}
-        >
-          <label className="sr-only" htmlFor="address">
-            Search {engineName} or enter an address
-          </label>
-          <input
-            id="address"
-            value={draft}
-            onChange={(event) => {
-              setDraft(event.target.value);
-              setNotice(null);
-            }}
-            placeholder={`Search ${engineName} or enter an address`}
-            enterKeyHint="go"
-            autoCapitalize="none"
-            autoCorrect="off"
-            spellCheck={false}
-            className="w-full rounded-2xl bg-surface px-4 py-4 text-base text-fg outline-none placeholder:text-muted focus:outline focus:outline-2 focus:outline-amber"
-          />
-        </form>
-        {notice ? <p className="mt-2 text-sm text-danger">{notice}</p> : null}
-        <div className="mt-4 flex gap-3">
-          <TvButton onClick={submit} className="min-h-12 bg-amber px-6 font-semibold text-amber-ink">
-            Go
-          </TvButton>
-          <TvButton onClick={onBookmarks} className="min-h-12 bg-surface px-5 font-semibold text-fg">
-            Bookmarks
-          </TvButton>
-        </div>
+      <div className="px-5 py-6 md:px-12 md:py-8 max-w-6xl mx-auto flex flex-col gap-8">
+        {/* Navigation & Status Header */}
+        <header className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <img
+              src="/xtream-logo.png"
+              alt="Xtream"
+              className="h-14 sm:h-20 w-auto object-contain drop-shadow-[0_4px_16px_rgba(62,203,255,0.25)]"
+            />
+            <div className="hidden sm:block">
+              <span className="text-xs font-bold tracking-widest text-amber uppercase">
+                Living-Room & Mobile Web
+              </span>
+              <p className="text-xs text-muted">Direct video streaming & tracker-free browsing</p>
+            </div>
+          </div>
 
-        {recent.length > 0 ? (
-          <section className="mt-8">
-            <SectionLabel>Recent</SectionLabel>
-            <div className="mt-3 flex gap-3 overflow-x-auto pb-1">
+          {/* Quick Navigation Action Pills */}
+          <nav className="flex items-center gap-2" aria-label="Main Navigation">
+            <TvButton
+              onClick={onBookmarks}
+              variant="glass"
+              className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-xs font-semibold"
+            >
+              <Bookmark className="size-4 text-amber" />
+              <span>Bookmarks</span>
+              {bookmarksCount > 0 && (
+                <span className="rounded-full bg-amber/20 text-amber text-[10px] font-bold px-1.5 py-0.2">
+                  {bookmarksCount}
+                </span>
+              )}
+            </TvButton>
+
+            <TvButton
+              onClick={onHistory}
+              variant="glass"
+              className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-xs font-semibold"
+            >
+              <HistoryIcon className="size-4 text-magenta" />
+              <span>History</span>
+              {history.length > 0 && (
+                <span className="rounded-full bg-magenta/20 text-magenta text-[10px] font-bold px-1.5 py-0.2">
+                  {history.length}
+                </span>
+              )}
+            </TvButton>
+
+            <TvButton
+              onClick={onSettings}
+              variant="glass"
+              className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-xs font-semibold"
+              title="Settings"
+            >
+              <SettingsIcon className="size-4 text-muted group-hover:text-fg" />
+              <span className="hidden sm:inline">Settings</span>
+            </TvButton>
+          </nav>
+        </header>
+
+        {/* Hero Search & URL Input Capsule */}
+        <section className="relative">
+          <div className="absolute -inset-1 rounded-3xl bg-gradient-to-r from-amber/30 via-magenta/20 to-blue-600/30 blur-xl opacity-50" />
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              submit();
+            }}
+            className="relative flex items-center gap-2 rounded-2xl glass-panel p-2 shadow-2xl border border-line"
+          >
+            <div className="flex items-center gap-2 pl-3 text-muted">
+              <Search className="size-5 text-amber" />
+              <span className="hidden sm:inline-block rounded-md bg-surface-2 px-2 py-0.5 text-[11px] font-mono text-muted uppercase">
+                {engineName}
+              </span>
+            </div>
+
+            <label htmlFor="home-address" className="sr-only">
+              Search or enter address
+            </label>
+            <input
+              id="home-address"
+              value={draft}
+              onChange={(e) => {
+                setDraft(e.target.value);
+                setNotice(null);
+              }}
+              placeholder={`Search ${engineName} or enter https:// address...`}
+              enterKeyHint="go"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              className="w-full bg-transparent px-3 py-3.5 text-base sm:text-lg text-fg outline-none placeholder:text-muted/60"
+            />
+
+            {draft && (
+              <button
+                type="button"
+                onClick={() => setDraft("")}
+                className="p-2 text-muted hover:text-fg transition"
+                aria-label="Clear input"
+              >
+                <X className="size-4" />
+              </button>
+            )}
+
+            <TvButton
+              primary
+              onClick={submit}
+              className="shrink-0 px-6 sm:px-8 py-3.5 rounded-xl font-bold text-sm tracking-wide"
+            >
+              GO
+            </TvButton>
+          </form>
+
+          {notice && (
+            <p className="mt-2.5 px-3 text-xs font-semibold text-danger animate-in fade-in">
+              {notice}
+            </p>
+          )}
+
+          {/* Quick Trending Suggestions Bar */}
+          <div className="mt-3 flex flex-wrap items-center gap-2 px-1">
+            <span className="text-[11px] font-bold text-muted uppercase flex items-center gap-1">
+              <Flame className="size-3.5 text-amber" /> Quick:
+            </span>
+            {[
+              { label: "YouTube", url: "https://www.youtube.com" },
+              { label: "Twitch", url: "https://www.twitch.tv" },
+              { label: "Wikipedia", url: "https://www.wikipedia.org" },
+              { label: "Internet Archive", url: "https://archive.org" },
+              { label: "Reddit", url: "https://www.reddit.com" },
+              { label: "NASA", url: "https://www.nasa.gov" },
+            ].map((shortcut) => (
+              <button
+                key={shortcut.label}
+                type="button"
+                onClick={() => onOpen(shortcut.url)}
+                className="rounded-lg bg-surface/60 hover:bg-surface-2 border border-line/50 px-2.5 py-1 text-xs text-muted hover:text-fg transition"
+              >
+                {shortcut.label}
+              </button>
+            ))}
+          </div>
+        </section>
+
+        {/* Recent Activity Carousel (if any) */}
+        {recent.length > 0 && (
+          <section className="flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <SectionLabel badge={recent.length} icon={<HistoryIcon className="size-4" />}>
+                Recent History
+              </SectionLabel>
+              <TvButton
+                onClick={onHistory}
+                variant="ghost"
+                className="text-xs text-amber font-semibold hover:underline"
+              >
+                View all
+              </TvButton>
+            </div>
+
+            <div className="flex gap-3 overflow-x-auto pb-2 pt-1 scroll-smooth">
               {recent.map((item) => (
                 <TvButton
                   key={item.id}
                   onClick={() => onOpen(item.url)}
-                  className="flex min-h-16 w-40 shrink-0 flex-col items-start justify-center bg-surface px-4 text-left"
+                  className="flex min-h-[76px] w-48 sm:w-56 shrink-0 flex-col justify-between rounded-xl glass-card p-3 text-left transition hover:scale-[1.02]"
                 >
-                  <span className="block w-full truncate text-base font-semibold text-fg">{item.title}</span>
-                  <span className="block w-full truncate text-sm text-muted">{hostOf(item.url)}</span>
+                  <div className="min-w-0 w-full">
+                    <span className="block truncate text-sm font-semibold text-fg">
+                      {item.title}
+                    </span>
+                    <span className="block truncate text-xs text-amber/80 font-mono mt-0.5">
+                      {hostOf(item.url)}
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-muted self-end mt-1">
+                    {ago(item.visitedAt)}
+                  </span>
                 </TvButton>
               ))}
             </div>
           </section>
-        ) : null}
+        )}
 
-        <section className="mt-8">
-          <SectionLabel>Suggested</SectionLabel>
-          <div className="mt-3 flex gap-3 overflow-x-auto pb-1">
-            {SUGGESTED.map((page) => (
+        {/* Featured Streaming & Web Hubs */}
+        <section className="flex flex-col gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <SectionLabel icon={<Sparkles className="size-4" />}>
+              Suggested Streaming & Portals
+            </SectionLabel>
+
+            {/* Category filter pills */}
+            <div className="flex items-center gap-1.5 overflow-x-auto p-1 bg-surface-2/60 rounded-xl border border-line/50">
+              {["All", "Streaming", "Knowledge", "Space", "Community"].map((cat) => (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => setSelectedCategory(cat)}
+                  className={clsx(
+                    "px-3 py-1 rounded-lg text-xs font-semibold transition",
+                    selectedCategory === cat
+                      ? "bg-amber text-amber-ink font-bold shadow-sm"
+                      : "text-muted hover:text-fg hover:bg-surface/50",
+                  )}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+            {filteredChannels.map((channel) => (
               <TvButton
-                key={page.url}
-                onClick={() => onOpen(page.url)}
-                className="flex min-h-16 w-40 shrink-0 items-center bg-surface px-4 text-left text-base font-semibold text-fg"
+                key={channel.url}
+                onClick={() => onOpen(channel.url)}
+                className="group flex flex-col justify-between rounded-2xl glass-card p-4 text-left border border-line/60 transition-all duration-200 hover:border-amber/60 hover:shadow-xl"
               >
-                {page.title}
+                <div>
+                  <div className="flex items-center justify-between gap-2 mb-3">
+                    <div
+                      className={clsx(
+                        "size-11 rounded-xl flex items-center justify-center bg-gradient-to-br shadow-md",
+                        channel.gradient,
+                      )}
+                    >
+                      <ChannelIcon name={channel.iconName} />
+                    </div>
+                    <span className="rounded-full bg-surface-2/90 border border-line/60 px-2 py-0.5 text-[10px] font-semibold text-muted uppercase">
+                      {channel.category}
+                    </span>
+                  </div>
+
+                  <h3 className="text-base font-bold text-fg group-hover:text-amber transition">
+                    {channel.title}
+                  </h3>
+                  <p className="mt-1 text-xs text-muted line-clamp-2 leading-relaxed">
+                    {channel.description}
+                  </p>
+                </div>
+
+                <div className="mt-4 pt-2.5 border-t border-line/40 flex items-center justify-between text-xs">
+                  <span className="text-[11px] font-mono text-muted/70 truncate max-w-[150px]">
+                    {hostOf(channel.url)}
+                  </span>
+                  <span className="text-amber text-xs font-semibold flex items-center gap-1 group-hover:translate-x-0.5 transition">
+                    Launch <ExternalLink className="size-3" />
+                  </span>
+                </div>
               </TvButton>
             ))}
+          </div>
+        </section>
+
+        {/* Feature Badges Footer */}
+        <section className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-4 border-t border-line/40">
+          <div className="flex items-center gap-2.5 rounded-xl bg-surface/50 border border-line/40 p-3">
+            <ShieldCheck className="size-5 text-emerald-400 shrink-0" />
+            <div className="min-w-0">
+              <p className="text-xs font-bold text-fg">Ad-Shield Active</p>
+              <p className="text-[10px] text-muted truncate">Popup & video ad filtering</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2.5 rounded-xl bg-surface/50 border border-line/40 p-3">
+            <Play className="size-5 text-amber shrink-0" />
+            <div className="min-w-0">
+              <p className="text-xs font-bold text-fg">Media Sniffer</p>
+              <p className="text-[10px] text-muted truncate">MP4, HLS, & MKV detection</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2.5 rounded-xl bg-surface/50 border border-line/40 p-3">
+            <Tv className="size-5 text-magenta shrink-0" />
+            <div className="min-w-0">
+              <p className="text-xs font-bold text-fg">D-Pad Navigation</p>
+              <p className="text-[10px] text-muted truncate">Optimized for TV remotes</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2.5 rounded-xl bg-surface/50 border border-line/40 p-3">
+            <Zap className="size-5 text-yellow-400 shrink-0" />
+            <div className="min-w-0">
+              <p className="text-xs font-bold text-fg">Turbo WebView</p>
+              <p className="text-[10px] text-muted truncate">Hardware accelerated</p>
+            </div>
           </div>
         </section>
       </div>
@@ -171,53 +524,73 @@ export function ResultsScreen({
 
   return (
     <Screen>
-      <div className="px-5 pt-6 pb-10 md:px-10">
-        <div className="flex items-center gap-3">
-          <BackButton onClick={onBack} primary={hits === null || hits.length === 0} />
-          <div className="min-w-0">
-            <p className="text-sm font-semibold tracking-widest text-amber uppercase">Search</p>
-            <h1 className="truncate font-display text-3xl text-fg md:text-4xl">{query}</h1>
+      <div className="px-5 py-6 md:px-12 md:py-8 max-w-4xl mx-auto flex flex-col gap-6">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <BackButton onClick={onBack} primary={hits === null || hits.length === 0} />
+            <div className="min-w-0">
+              <p className="text-xs font-bold tracking-widest text-amber uppercase">Search Query</p>
+              <h1 className="truncate font-display text-2xl sm:text-3xl text-fg">{query}</h1>
+            </div>
           </div>
+
+          <TvButton
+            onClick={() => onOpen(searchPageUrl(engine, query))}
+            variant="glass"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold shrink-0"
+          >
+            <span>Open on {engineLabel(engine)}</span>
+            <ExternalLink className="size-3.5 text-amber" />
+          </TvButton>
         </div>
-        <p className="mt-4 max-w-2xl text-sm text-muted">
-          The remote list comes from DuckDuckGo. Open on {engineLabel(engine)} if you want that site’s own results page.
-        </p>
-        <TvButton
-          onClick={() => onOpen(searchPageUrl(engine, query))}
-          className="mt-4 min-h-12 bg-surface px-4 font-semibold text-fg"
-        >
-          Open on {engineLabel(engine)}
-        </TvButton>
 
         {hits === null ? (
-          <p className="mt-8 text-lg text-muted" aria-live="polite">
-            Searching…
-          </p>
+          <div className="flex flex-col items-center justify-center py-20 gap-4" aria-live="polite">
+            <div className="size-12 rounded-full border-2 border-line border-t-amber animate-spin" />
+            <p className="text-sm font-semibold tracking-wider text-muted uppercase">Searching DuckDuckGo…</p>
+          </div>
         ) : error ? (
-          <div className="mt-8 max-w-xl">
-            <h2 className="font-display text-3xl text-fg">Search did not finish</h2>
-            <p className="mt-2 text-base text-muted">{error}</p>
+          <div className="rounded-2xl glass-card p-6 border border-danger/40 max-w-lg">
+            <h2 className="font-display text-2xl text-fg">Search did not finish</h2>
+            <p className="mt-2 text-sm text-muted">{error}</p>
             <TvButton
+              primary
               onClick={() => setAttempt((n) => n + 1)}
-              className="mt-4 min-h-12 bg-amber px-5 font-semibold text-amber-ink"
+              className="mt-5 px-6 py-2.5 rounded-xl text-sm font-semibold"
             >
               Retry
             </TvButton>
           </div>
         ) : hits.length === 0 ? (
-          <p className="mt-8 text-lg text-muted">Nothing came back for that search.</p>
+          <div className="rounded-2xl glass-card p-8 text-center max-w-md mx-auto">
+            <Search className="size-10 text-muted mx-auto mb-3" />
+            <p className="text-lg font-semibold text-fg">No results found</p>
+            <p className="text-sm text-muted mt-1">Try another search or open directly on {engineLabel(engine)}.</p>
+            <TvButton
+              primary
+              onClick={() => onOpen(searchPageUrl(engine, query))}
+              className="mt-5 px-6 py-2.5 rounded-xl text-sm font-semibold"
+            >
+              Search on {engineLabel(engine)}
+            </TvButton>
+          </div>
         ) : (
-          <div className="mt-6 grid gap-3">
+          <div className="grid gap-3">
             {hits.map((hit, index) => (
               <TvButton
                 key={hit.url}
                 data-result={index === 0 ? "" : undefined}
                 onClick={() => onOpen(hit.url)}
-                className="flex w-full flex-col gap-1 bg-surface px-4 py-4 text-left"
+                className="flex w-full flex-col gap-1.5 rounded-xl glass-card p-4 text-left hover:border-amber/50 transition"
               >
-                <span className="text-lg font-semibold text-fg">{hit.title}</span>
-                <span className="text-sm text-amber">{hit.host}</span>
-                {hit.snippet ? <span className="text-sm text-pretty text-muted">{hit.snippet}</span> : null}
+                <div className="flex items-center gap-2">
+                  <Globe className="size-4 text-amber shrink-0" />
+                  <span className="text-xs font-mono text-amber">{hit.host}</span>
+                </div>
+                <h3 className="text-base sm:text-lg font-semibold text-fg">{hit.title}</h3>
+                {hit.snippet ? (
+                  <p className="text-xs sm:text-sm text-muted leading-relaxed line-clamp-2">{hit.snippet}</p>
+                ) : null}
               </TvButton>
             ))}
           </div>
@@ -283,52 +656,73 @@ export function PageScreen({
   const title = page?.title || (failure ? "Unable to load this page" : titleFromUrl(url));
 
   return (
-    <div className="flex h-full flex-col bg-bg text-fg">
-      <header className="shrink-0 border-b border-line px-4 py-3 md:px-8">
+    <div className="flex h-full flex-col bg-bg text-fg overflow-hidden">
+      {/* Sleek Browser Omnibar */}
+      <header className="shrink-0 border-b border-line/60 bg-surface/80 backdrop-blur-xl px-3 py-2.5 sm:px-6">
         <div className="flex items-center gap-2">
           <BackButton onClick={onBack} primary />
+
           <TvButton
             disabled={!canForward}
             onClick={onForward}
             aria-label="Forward"
-            className="grid size-12 place-items-center rounded-full bg-surface text-fg disabled:text-muted"
+            className="grid size-11 place-items-center rounded-xl bg-surface text-fg disabled:text-muted/40 disabled:pointer-events-none"
           >
-            <RotateCw className="size-5 -scale-x-100" />
+            <RotateCw className="size-4 -scale-x-100" />
           </TvButton>
+
           <TvButton
             onClick={() => setAttempt((n) => n + 1)}
             aria-label="Reload"
-            className="grid size-12 place-items-center rounded-full bg-surface text-fg"
+            className="grid size-11 place-items-center rounded-xl bg-surface text-fg"
           >
-            <RotateCw className="size-5" />
+            <RefreshCw className={clsx("size-4", loading && "animate-spin text-amber")} />
           </TvButton>
+
           <TvButton
             onClick={onHome}
             aria-label="Home"
-            className="grid size-12 place-items-center rounded-full bg-surface text-fg"
+            className="grid size-11 place-items-center rounded-xl bg-surface text-fg"
           >
-            <House className="size-5" />
+            <House className="size-4" />
           </TvButton>
-          <p className="min-w-0 flex-1 truncate px-2 text-sm text-muted">{page?.url ?? url}</p>
+
+          {/* Omnibar URL Pill */}
+          <div className="min-w-0 flex-1 flex items-center gap-2 rounded-xl bg-surface-2/80 px-3 py-2 border border-line/50">
+            <Lock className="size-3.5 text-emerald-400 shrink-0" />
+            <span className="truncate text-xs font-mono text-muted">{page?.url ?? url}</span>
+          </div>
+
+          {/* Bookmark Star Button */}
           <TvButton
             aria-label={bookmarked ? "Remove bookmark" : "Save bookmark"}
             aria-pressed={bookmarked}
             onClick={() => onToggleBookmark(title)}
-            className="grid size-12 shrink-0 place-items-center rounded-full bg-surface text-fg"
+            className={clsx(
+              "grid size-11 shrink-0 place-items-center rounded-xl transition",
+              bookmarked
+                ? "bg-amber text-amber-ink shadow-[0_0_12px_rgba(62,203,255,0.4)]"
+                : "bg-surface text-fg hover:text-amber",
+            )}
           >
-            <Star className="size-5" fill={bookmarked ? "currentColor" : "none"} />
+            <Star className="size-4" fill={bookmarked ? "currentColor" : "none"} />
           </TvButton>
         </div>
-        <div className="mt-3 h-1 overflow-hidden rounded-full bg-surface">
-          {loading ? <div className="h-full w-1/3 rounded-full bg-amber motion-safe:animate-pulse" /> : null}
+
+        {/* Loading Progress Bar */}
+        <div className="mt-2 h-1 overflow-hidden rounded-full bg-surface-2/60">
+          {loading && (
+            <div className="h-full w-2/5 rounded-full bg-gradient-to-r from-amber to-magenta animate-pulse" />
+          )}
         </div>
       </header>
 
+      {/* Main Content: Live Web Frame OR Clean Reading View */}
       {live && page && !page.frameBlocked ? (
         <iframe
           title={page.title || "Live page"}
           src={page.url}
-          className="min-h-0 w-full flex-1 bg-fg"
+          className="min-h-0 w-full flex-1 bg-white"
           sandbox={
             javascriptEnabled
               ? "allow-scripts allow-forms allow-popups allow-presentation allow-same-origin"
@@ -338,102 +732,132 @@ export function PageScreen({
           referrerPolicy="no-referrer-when-downgrade"
         />
       ) : (
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-6 md:px-10">
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-6 md:px-12 md:py-10">
           {loading ? (
-            <div className="flex h-full min-h-[50dvh] flex-col items-center justify-center gap-6" aria-live="polite">
-              <div className="relative grid size-20 place-items-center">
+            <div className="flex h-full min-h-[50dvh] flex-col items-center justify-center gap-4" aria-live="polite">
+              <div className="relative grid size-16 place-items-center">
                 <span className="absolute inset-0 rounded-full border border-line" />
                 <span className="xtream-spin absolute inset-0 rounded-full border-2 border-transparent border-t-amber border-r-magenta" />
                 <span className="size-2 rounded-full bg-amber" />
               </div>
-              <p className="text-sm font-semibold tracking-widest text-fg uppercase">Loading</p>
+              <p className="text-xs font-bold tracking-widest text-muted uppercase">Rendering page</p>
             </div>
           ) : failure ? (
-            <div className="max-w-xl">
-              <p className="text-sm font-semibold tracking-widest text-danger uppercase">Page</p>
-              <h1 className="mt-2 font-display text-4xl text-fg">{failure.message}</h1>
-              <p className="mt-3 text-base text-muted">Check the address, then retry or go home.</p>
+            <div className="max-w-xl mx-auto rounded-2xl glass-card p-8 border border-danger/40 mt-10">
+              <p className="text-xs font-bold tracking-widest text-danger uppercase">Connection Error</p>
+              <h1 className="mt-2 font-display text-3xl text-fg">{failure.message}</h1>
+              <p className="mt-3 text-sm text-muted">Check the URL, verify your internet, or retry.</p>
               <div className="mt-6 flex flex-wrap gap-3">
                 <TvButton
+                  primary
                   onClick={() => setAttempt((n) => n + 1)}
-                  className="min-h-12 bg-amber px-5 font-semibold text-amber-ink"
+                  className="px-6 py-2.5 rounded-xl text-sm font-semibold"
                 >
                   Retry
                 </TvButton>
-                <TvButton onClick={onHome} className="min-h-12 bg-surface px-5 font-semibold text-fg">
+                <TvButton onClick={onHome} className="px-6 py-2.5 rounded-xl text-sm font-semibold">
                   Home
                 </TvButton>
               </div>
             </div>
           ) : page ? (
-            <article className="mx-auto max-w-3xl">
-              <div className="flex flex-wrap items-center gap-2">
-                {page.insecure ? (
-                  <span className="rounded-lg bg-surface px-2 py-1 text-sm text-danger">Not secure</span>
-                ) : null}
-                {page.frameBlocked ? (
-                  <span className="rounded-lg bg-surface px-2 py-1 text-sm text-muted">Reading view</span>
-                ) : (
+            <article className="mx-auto max-w-3xl flex flex-col gap-6">
+              {/* Reading Header & Controls */}
+              <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-line/40">
+                <div className="flex items-center gap-2">
+                  {page.insecure ? (
+                    <span className="rounded-lg bg-danger/20 border border-danger/40 px-2.5 py-1 text-xs text-danger font-semibold">
+                      Not secure
+                    </span>
+                  ) : (
+                    <span className="rounded-lg bg-emerald-950/40 border border-emerald-800/40 px-2.5 py-1 text-xs text-emerald-400 font-semibold flex items-center gap-1">
+                      <Lock className="size-3" /> Secure
+                    </span>
+                  )}
+                  <span className="rounded-lg bg-surface-2 px-2.5 py-1 text-xs text-muted font-mono">
+                    {hostOf(page.url)}
+                  </span>
+                </div>
+
+                {!page.frameBlocked && (
                   <TvButton
                     onClick={() => setLive(true)}
-                    className="min-h-10 bg-surface px-3 text-sm font-semibold text-fg"
+                    variant="glass"
+                    className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold"
                   >
-                    Show live page
+                    <span>Switch to Live Web</span>
+                    <ExternalLink className="size-3.5 text-amber" />
                   </TvButton>
                 )}
               </div>
-              <h1 className="mt-4 font-display text-4xl text-fg md:text-5xl">{page.title}</h1>
-              <p className="mt-2 text-sm text-amber">{hostOf(page.url)}</p>
-              {page.frameBlocked ? (
-                <p className="mt-4 text-base text-muted">
-                  This site does not allow an embedded page. The reading view is what works on the remote.
-                </p>
-              ) : (
-                <p className="mt-4 text-base text-muted">
-                  Reading view keeps the remote on Xtream. The live page is for a pointer or touch.
-                </p>
-              )}
-              <div className="mt-6 grid gap-4">
+
+              <div>
+                <h1 className="font-display text-3xl sm:text-5xl text-fg font-extrabold tracking-tight">
+                  {page.title}
+                </h1>
+                <p className="mt-2 text-xs font-mono text-amber">{page.url}</p>
+              </div>
+
+              {/* Text Blocks */}
+              <div className="grid gap-4 mt-2">
                 {page.blocks.map((block, index) =>
                   block.kind === "h" ? (
-                    <h2 key={`${block.text}-${index}`} className="font-display text-2xl text-fg">
+                    <h2
+                      key={`${block.text}-${index}`}
+                      className="font-display text-xl sm:text-2xl text-fg font-bold mt-4"
+                    >
                       {block.text}
                     </h2>
                   ) : (
-                    <p key={`${block.text}-${index}`} className="text-lg leading-relaxed text-fg">
+                    <p
+                      key={`${block.text}-${index}`}
+                      className="text-base sm:text-lg leading-relaxed text-fg/90"
+                    >
                       {block.kind === "li" ? `• ${block.text}` : block.text}
                     </p>
                   ),
                 )}
               </div>
-              {page.links.length > 0 ? (
-                <section className="mt-10">
-                  <SectionLabel>On this page</SectionLabel>
-                  <div className="mt-3 grid gap-2">
+
+              {/* Embedded Links Section */}
+              {page.links.length > 0 && (
+                <section className="mt-8 pt-6 border-t border-line/40">
+                  <SectionLabel icon={<Globe className="size-4" />} badge={page.links.length}>
+                    Page Links
+                  </SectionLabel>
+                  <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                     {page.links.map((link) => (
                       <TvButton
                         key={link.href}
                         onClick={() => onOpen(link.href)}
-                        className="w-full bg-surface px-4 py-3 text-left"
+                        className="flex flex-col justify-between rounded-xl glass-card p-3 text-left hover:border-amber/50"
                       >
-                        <span className="block text-base font-semibold text-fg">{link.text}</span>
-                        <span className="block truncate text-sm text-muted">{hostOf(link.href)}</span>
+                        <span className="block text-sm font-semibold text-fg line-clamp-1">{link.text}</span>
+                        <span className="block truncate text-xs text-muted/80 font-mono mt-1">
+                          {hostOf(link.href)}
+                        </span>
                       </TvButton>
                     ))}
                   </div>
                 </section>
-              ) : null}
+              )}
             </article>
           ) : null}
         </div>
       )}
-      {live ? (
-        <div className="shrink-0 border-t border-line px-4 py-3">
-          <TvButton onClick={() => setLive(false)} className="min-h-12 bg-surface px-4 font-semibold text-fg">
-            Back to reading view
+
+      {live && (
+        <footer className="shrink-0 border-t border-line/60 bg-surface/90 px-4 py-2.5 flex items-center justify-between">
+          <p className="text-xs text-muted">Viewing live web frame</p>
+          <TvButton
+            onClick={() => setLive(false)}
+            variant="glass"
+            className="px-4 py-2 rounded-xl text-xs font-semibold"
+          >
+            Back to Reading View
           </TvButton>
-        </div>
-      ) : null}
+        </footer>
+      )}
     </div>
   );
 }
@@ -445,6 +869,7 @@ export function ListScreen({
   onBack,
   onOpen,
   onRemove,
+  onClearAll,
 }: {
   title: string;
   empty: string;
@@ -452,36 +877,98 @@ export function ListScreen({
   onBack: () => void;
   onOpen: (url: string) => void;
   onRemove: (id: string) => void;
+  onClearAll?: () => void;
 }) {
+  const [filter, setFilter] = useState("");
+  const filtered = rows.filter(
+    (r) =>
+      r.title.toLowerCase().includes(filter.toLowerCase()) ||
+      r.url.toLowerCase().includes(filter.toLowerCase()),
+  );
+
   return (
     <Screen>
-      <div className="px-5 pt-6 pb-10 md:px-10">
-        <div className="flex items-center gap-3">
-          <BackButton onClick={onBack} primary />
-          <h1 className="font-display text-4xl text-fg">{title}</h1>
-        </div>
+      <div className="px-5 py-6 md:px-12 md:py-8 max-w-4xl mx-auto flex flex-col gap-6">
+        <header className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <BackButton onClick={onBack} primary />
+            <div>
+              <h1 className="font-display text-2xl sm:text-3xl text-fg font-bold">{title}</h1>
+              <p className="text-xs text-muted">
+                {rows.length} {rows.length === 1 ? "entry" : "entries"} saved on this device
+              </p>
+            </div>
+          </div>
+
+          {rows.length > 0 && onClearAll && (
+            <TvButton
+              variant="danger"
+              onClick={onClearAll}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold"
+            >
+              <Trash2 className="size-3.5" />
+              <span>Clear All</span>
+            </TvButton>
+          )}
+        </header>
+
+        {rows.length > 4 && (
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted" />
+            <input
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              placeholder={`Filter ${title.toLowerCase()}...`}
+              className="w-full rounded-xl glass-panel pl-9 pr-4 py-2.5 text-sm text-fg outline-none placeholder:text-muted/60"
+            />
+          </div>
+        )}
+
         {rows.length === 0 ? (
-          <p className="mt-8 max-w-md text-lg text-muted">{empty}</p>
+          <div className="rounded-2xl glass-card p-10 text-center max-w-md mx-auto my-10">
+            <Bookmark className="size-10 text-muted mx-auto mb-3" />
+            <p className="text-lg font-semibold text-fg">{empty}</p>
+            <p className="text-xs text-muted mt-1">Open pages or videos to add items to your collection.</p>
+          </div>
+        ) : filtered.length === 0 ? (
+          <p className="text-center text-sm text-muted py-8">No results matching "{filter}".</p>
         ) : (
-          <div className="mt-6 grid gap-3">
-            {rows.map((row) => (
-              <div key={row.id} className="flex items-stretch gap-2">
-                <TvButton
+          <div className="grid gap-2.5">
+            {filtered.map((row) => (
+              <div
+                key={row.id}
+                className="flex items-center justify-between gap-3 rounded-xl glass-card p-3.5 hover:border-amber/50 transition group"
+              >
+                <button
+                  type="button"
                   onClick={() => onOpen(row.url)}
-                  className="min-w-0 flex-1 bg-surface px-4 py-3 text-left"
+                  className="min-w-0 flex-1 text-left select-none"
                 >
-                  <span className="block truncate text-lg font-semibold text-fg">{row.title}</span>
-                  <span className="block truncate text-sm text-muted">{hostOf(row.url)}</span>
-                </TvButton>
-                <div className="flex shrink-0 flex-col items-end justify-between">
-                  {row.meta ? <span className="text-sm text-muted">{row.meta}</span> : <span />}
+                  <span className="block truncate text-base font-semibold text-fg group-hover:text-amber transition">
+                    {row.title}
+                  </span>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="truncate text-xs font-mono text-muted">{hostOf(row.url)}</span>
+                    {row.meta && <span className="text-[10px] text-muted/70">• {row.meta}</span>}
+                  </div>
+                </button>
+
+                <div className="flex items-center gap-1.5 shrink-0">
                   <TvButton
+                    onClick={() => onOpen(row.url)}
+                    variant="glass"
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold"
+                  >
+                    Open
+                  </TvButton>
+                  <button
+                    type="button"
                     onClick={() => onRemove(row.id)}
                     aria-label={`Remove ${row.title}`}
-                    className="min-h-12 bg-surface-2 px-4 text-sm font-semibold text-fg"
+                    className="p-2 rounded-lg text-muted hover:text-danger hover:bg-danger/15 transition"
                   >
-                    Remove
-                  </TvButton>
+                    <Trash2 className="size-4" />
+                  </button>
                 </div>
               </div>
             ))}
@@ -525,146 +1012,235 @@ export function SettingsScreen({
     if (kind === "cache") onClearCache();
     if (kind === "all") onClearAll();
     setPending(null);
-    setNote(kind === "cache" ? "Readable-page cache cleared." : "Cleared.");
+    setNote(kind === "cache" ? "Readable-page cache cleared." : "Data cleared successfully.");
   }
 
   return (
     <Screen>
-      <div className="px-5 pt-6 pb-12 md:px-10">
-        <div className="flex items-center gap-3">
+      <div className="px-5 py-6 md:px-12 md:py-8 max-w-4xl mx-auto flex flex-col gap-6">
+        <header className="flex items-center gap-3">
           <BackButton onClick={onBack} primary />
-          <h1 className="font-display text-4xl text-fg">Settings</h1>
-        </div>
+          <div>
+            <h1 className="font-display text-2xl sm:text-3xl text-fg font-bold">Settings</h1>
+            <p className="text-xs text-muted">Configure browser mode, engines, and privacy</p>
+          </div>
+        </header>
 
-        <section className="mt-8 max-w-3xl">
-          <SectionLabel>Browser</SectionLabel>
+        {note && (
+          <div className="rounded-xl bg-amber/15 border border-amber/40 px-4 py-2.5 text-xs text-amber font-semibold animate-in fade-in">
+            {note}
+          </div>
+        )}
+
+        {/* Section 1: Engine & Mode */}
+        <section className="rounded-2xl glass-card p-5 flex flex-col gap-5">
+          <SectionLabel icon={<Globe className="size-4" />}>Browser & Engine</SectionLabel>
+
+          {/* Homepage */}
           <TvButton
             onClick={onEditHomepage}
-            className="mt-3 flex min-h-16 w-full items-center justify-between gap-3 bg-surface px-4 text-left"
+            className="flex items-center justify-between gap-3 rounded-xl bg-surface/80 p-3.5 text-left border border-line/50 hover:border-amber/50"
           >
-            <span>
-              <span className="block text-base font-semibold text-fg">Homepage</span>
-              <span className="block truncate text-sm text-muted">{settings.homepage || "Xtream home"}</span>
-            </span>
-            <span className="text-sm font-semibold text-amber">Edit</span>
+            <div>
+              <span className="block text-sm font-semibold text-fg">Default Homepage</span>
+              <span className="block truncate text-xs text-muted font-mono mt-0.5">
+                {settings.homepage || "Xtream Living-Room Home"}
+              </span>
+            </div>
+            <span className="text-xs font-bold text-amber">Edit</span>
           </TvButton>
 
-          <p className="mt-5 text-sm text-muted">Search engine for the full results page</p>
-          <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
-            {(["google", "duckduckgo", "bing"] as const).map((engine) => (
-              <TvButton
-                key={engine}
-                aria-pressed={settings.searchEngine === engine}
-                onClick={() => onChange({ searchEngine: engine })}
+          {/* Search Engine Selection */}
+          <div>
+            <label className="block text-xs font-semibold text-muted uppercase mb-2">Search Engine</label>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              {(["google", "duckduckgo", "bing"] as const).map((engine) => (
+                <button
+                  key={engine}
+                  type="button"
+                  onClick={() => onChange({ searchEngine: engine })}
+                  className={clsx(
+                    "flex items-center justify-center py-2.5 px-3 rounded-xl text-xs font-bold transition border",
+                    settings.searchEngine === engine
+                      ? "bg-amber text-amber-ink border-amber shadow-sm"
+                      : "bg-surface/60 text-muted hover:text-fg border-line/60 hover:bg-surface",
+                  )}
+                >
+                  {engineLabel(engine)}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Mode Switcher */}
+          <div>
+            <label className="block text-xs font-semibold text-muted uppercase mb-2">
+              Device User-Agent Mode
+            </label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => onChange({ browserMode: "standard" })}
                 className={clsx(
-                  "min-h-12 font-semibold",
-                  settings.searchEngine === engine ? "bg-amber text-amber-ink" : "bg-surface text-fg",
+                  "flex items-center justify-center gap-2 py-3 px-3 rounded-xl text-xs font-bold transition border",
+                  settings.browserMode === "standard"
+                    ? "bg-amber text-amber-ink border-amber shadow-sm"
+                    : "bg-surface/60 text-muted hover:text-fg border-line/60 hover:bg-surface",
                 )}
               >
-                {engineLabel(engine)}
-              </TvButton>
-            ))}
-          </div>
+                <Tv className="size-4" />
+                <span>Standard (Android TV)</span>
+              </button>
 
-          <p className="mt-5 text-sm text-muted">Browser mode for the readable view</p>
-          <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <TvButton
-              aria-pressed={settings.browserMode === "standard"}
-              onClick={() => onChange({ browserMode: "standard" })}
-              className={clsx(
-                "flex min-h-16 items-center justify-center gap-2 font-semibold",
-                settings.browserMode === "standard" ? "bg-amber text-amber-ink" : "bg-surface text-fg",
-              )}
-            >
-              <Tv className="size-4" />
-              Standard
-            </TvButton>
-            <TvButton
-              aria-pressed={settings.browserMode === "desktop"}
-              onClick={() => onChange({ browserMode: "desktop" })}
-              className={clsx(
-                "flex min-h-16 items-center justify-center gap-2 font-semibold",
-                settings.browserMode === "desktop" ? "bg-amber text-amber-ink" : "bg-surface text-fg",
-              )}
-            >
-              <Monitor className="size-4" />
-              Desktop
-            </TvButton>
+              <button
+                type="button"
+                onClick={() => onChange({ browserMode: "desktop" })}
+                className={clsx(
+                  "flex items-center justify-center gap-2 py-3 px-3 rounded-xl text-xs font-bold transition border",
+                  settings.browserMode === "desktop"
+                    ? "bg-amber text-amber-ink border-amber shadow-sm"
+                    : "bg-surface/60 text-muted hover:text-fg border-line/60 hover:bg-surface",
+                )}
+              >
+                <Laptop className="size-4" />
+                <span>Desktop Chrome</span>
+              </button>
+            </div>
           </div>
-          <p className="mt-2 text-sm text-muted">
-            Desktop mode changes how the readable view is requested. A live page still uses this device’s browser.
-          </p>
-
-          <TvButton
-            aria-pressed={settings.javascriptEnabled}
-            onClick={() => onChange({ javascriptEnabled: !settings.javascriptEnabled })}
-            className="mt-4 flex min-h-14 w-full items-center justify-between bg-surface px-4 text-left"
-          >
-            <span className="font-semibold text-fg">JavaScript on live pages</span>
-            <span className="text-sm font-semibold text-amber">{settings.javascriptEnabled ? "On" : "Off"}</span>
-          </TvButton>
         </section>
 
-        <section className="mt-8 max-w-3xl">
-          <SectionLabel>Video</SectionLabel>
+        {/* Section 2: Display & Device Presentation */}
+        <section className="rounded-2xl glass-card p-5 flex flex-col gap-4">
+          <SectionLabel icon={<Tv className="size-4" />}>Display & Viewport</SectionLabel>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            {[
+              { id: "tv", label: "16:9 TV Mode", icon: Tv },
+              { id: "mobile", label: "Mobile Phone", icon: Globe },
+              { id: "auto", label: "Auto Responsive", icon: Monitor },
+            ].map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => onChange({ deviceMode: item.id as any })}
+                className={clsx(
+                  "flex items-center justify-center gap-2 py-3 px-3 rounded-xl text-xs font-bold transition border",
+                  settings.deviceMode === item.id
+                    ? "bg-amber text-amber-ink border-amber shadow-sm"
+                    : "bg-surface/60 text-muted hover:text-fg border-line/60 hover:bg-surface",
+                )}
+              >
+                <item.icon className="size-4" />
+                <span>{item.label}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+
+        {/* Section 3: Privacy & Security */}
+        <section className="rounded-2xl glass-card p-5 flex flex-col gap-4">
+          <SectionLabel icon={<Shield className="size-4" />}>Privacy & Content Shield</SectionLabel>
+
           <TvButton
-            aria-pressed={settings.hideControlsWhilePlaying}
-            onClick={() => onChange({ hideControlsWhilePlaying: !settings.hideControlsWhilePlaying })}
-            className="mt-3 flex min-h-14 w-full items-center justify-between bg-surface px-4 text-left"
+            onClick={() => onChange({ javascriptEnabled: !settings.javascriptEnabled })}
+            className="flex items-center justify-between rounded-xl bg-surface/80 p-3.5 border border-line/50 hover:border-amber/50"
           >
-            <span className="font-semibold text-fg">Hide controls while playing</span>
-            <span className="text-sm font-semibold text-amber">
+            <div>
+              <span className="block text-sm font-semibold text-fg">JavaScript on Live Pages</span>
+              <span className="block text-xs text-muted mt-0.5">Toggle script execution in embedded frames</span>
+            </div>
+            <span
+              className={clsx(
+                "px-2.5 py-1 rounded-lg text-xs font-bold",
+                settings.javascriptEnabled
+                  ? "bg-emerald-950/60 text-emerald-400 border border-emerald-800/40"
+                  : "bg-surface-2 text-muted",
+              )}
+            >
+              {settings.javascriptEnabled ? "Enabled" : "Disabled"}
+            </span>
+          </TvButton>
+
+          <TvButton
+            onClick={() => onChange({ hideControlsWhilePlaying: !settings.hideControlsWhilePlaying })}
+            className="flex items-center justify-between rounded-xl bg-surface/80 p-3.5 border border-line/50 hover:border-amber/50"
+          >
+            <div>
+              <span className="block text-sm font-semibold text-fg">Auto-Hide Player Controls</span>
+              <span className="block text-xs text-muted mt-0.5">Fade controls during video playback</span>
+            </div>
+            <span
+              className={clsx(
+                "px-2.5 py-1 rounded-lg text-xs font-bold",
+                settings.hideControlsWhilePlaying
+                  ? "bg-amber/20 text-amber border border-amber/40"
+                  : "bg-surface-2 text-muted",
+              )}
+            >
               {settings.hideControlsWhilePlaying ? "On" : "Off"}
             </span>
           </TvButton>
+
+          {/* Storage & Clear Actions */}
+          <div className="pt-2">
+            <p className="text-xs font-bold text-muted uppercase mb-2">Storage & Data</p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <ClearButton
+                label="Clear History"
+                pending={pending === "history"}
+                onClick={() => confirm("history")}
+              />
+              <ClearButton
+                label="Clear Bookmarks"
+                pending={pending === "bookmarks"}
+                onClick={() => confirm("bookmarks")}
+              />
+              <ClearButton
+                label="Clear Cache"
+                pending={pending === "cache"}
+                onClick={() => confirm("cache")}
+              />
+              <ClearButton
+                label="Reset All"
+                pending={pending === "all"}
+                onClick={() => confirm("all")}
+              />
+            </div>
+          </div>
         </section>
 
-        <section className="mt-8 max-w-3xl">
-          <SectionLabel>Privacy</SectionLabel>
-          <p className="mt-3 text-sm text-muted">
-            Xtream does not store site passwords. Bookmarks, history, and these settings stay on this device.
+        {/* Section 4: About */}
+        <section className="rounded-2xl glass-card p-5 text-xs text-muted flex flex-col gap-2">
+          <div className="flex items-center gap-3 text-fg font-bold text-sm">
+            <img src="/xtream-icon.png" alt="" className="size-8 rounded-xl shadow-md" />
+            <span>Xtream Browser {APP_VERSION}</span>
+          </div>
+          <p>Full HTML5 video stream extraction (MP4, HLS, WebM, MKV). Protected DRM is refused by design.</p>
+          <p className="text-[11px] font-mono text-muted/80">
+            TV Sideloadable Build: app.xtream.tv • Mobile Sideloadable Build: app.xtream.mobile
           </p>
-          {note ? <p className="mt-2 text-sm text-amber">{note}</p> : null}
-          <div className="mt-3 grid gap-2 sm:grid-cols-2">
-            <ClearButton
-              label="Clear history"
-              pending={pending === "history"}
-              onClick={() => confirm("history")}
-            />
-            <ClearButton
-              label="Clear bookmarks"
-              pending={pending === "bookmarks"}
-              onClick={() => confirm("bookmarks")}
-            />
-            <ClearButton label="Clear cache" pending={pending === "cache"} onClick={() => confirm("cache")} />
-            <ClearButton
-              label="Clear browsing data"
-              pending={pending === "all"}
-              onClick={() => confirm("all")}
-            />
-          </div>
-        </section>
-
-        <section className="mt-8 max-w-3xl">
-          <SectionLabel>About</SectionLabel>
-          <div className="mt-3 grid gap-2 rounded-xl bg-surface p-4 text-sm text-muted">
-            <p className="flex items-center gap-2 text-fg">
-              <img src="/xtream-icon.png" alt="" className="size-8 rounded-lg" />
-              Xtream {APP_VERSION}
-            </p>
-            <p>Ordinary HTML5 video, including MP4 and HLS. Protected DRM streams are refused on purpose.</p>
-            <p>Readable pages use a {settings.browserMode === "desktop" ? "desktop" : "Android TV"} request.</p>
-          </div>
         </section>
       </div>
     </Screen>
   );
 }
 
-function ClearButton({ label, pending, onClick }: { label: string; pending: boolean; onClick: () => void }) {
+function ClearButton({
+  label,
+  pending,
+  onClick,
+}: {
+  label: string;
+  pending: boolean;
+  onClick: () => void;
+}) {
   return (
-    <TvButton onClick={onClick} className="min-h-12 bg-surface-2 px-4 text-left font-semibold text-fg">
-      {pending ? `Confirm ${label.toLowerCase()}` : label}
+    <TvButton
+      onClick={onClick}
+      variant={pending ? "danger" : "surface"}
+      className="py-2.5 px-3 rounded-xl text-xs font-semibold text-center"
+    >
+      {pending ? "Confirm?" : label}
     </TvButton>
   );
 }
@@ -680,16 +1256,18 @@ export function ErrorScreen({
 }) {
   return (
     <Screen>
-      <div className="flex min-h-full flex-col items-start justify-center px-5 py-10 md:px-10">
-        <p className="text-sm font-semibold tracking-widest text-danger uppercase">Can’t open</p>
-        <h1 className="mt-3 max-w-xl font-display text-4xl text-fg">{title}</h1>
-        <p className="mt-3 max-w-lg text-lg text-muted">{message}</p>
+      <div className="flex min-h-full flex-col items-center justify-center p-6 text-center max-w-md mx-auto">
+        <div className="size-16 rounded-2xl bg-danger/15 border border-danger/40 flex items-center justify-center text-danger mb-4">
+          <ShieldAlert className="size-8" />
+        </div>
+        <h1 className="font-display text-2xl sm:text-3xl font-bold text-fg">{title}</h1>
+        <p className="mt-2 text-sm text-muted leading-relaxed">{message}</p>
         <TvButton
           primary
           onClick={onHome}
-          className="mt-6 min-h-12 bg-amber px-5 font-semibold text-amber-ink"
+          className="mt-6 px-8 py-3 rounded-xl font-bold text-sm tracking-wide"
         >
-          Home
+          Return to Home
         </TvButton>
       </div>
     </Screen>

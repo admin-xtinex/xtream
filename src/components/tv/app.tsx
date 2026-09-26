@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { clsx } from "clsx";
 import { clearBrowseCache } from "@/lib/tv/cache";
 import { useTv } from "@/lib/tv/store";
 import type { MediaFormat } from "@/lib/tv/types";
@@ -21,7 +22,13 @@ import {
   ResultsScreen,
   SettingsScreen,
 } from "@/components/tv/screens";
-import { ago, TvButton } from "@/components/tv/ui";
+import {
+  ago,
+  DeviceSwitcherBar,
+  MobileBottomDock,
+  TvButton,
+} from "@/components/tv/ui";
+import { VirtualRemote } from "@/components/tv/virtual-remote";
 
 type PageEntry = { url: string };
 
@@ -101,8 +108,9 @@ export function XtreamApp() {
         ...current,
         {
           id: "error",
-          title: "That address is blocked",
-          message: "Xtream only opens public http and https sites. Local and private addresses stay closed.",
+          title: "Address Blocked",
+          message:
+            "Xtream only opens public http and https sites. Local network and private addresses stay closed.",
         },
       ]);
       return;
@@ -235,7 +243,7 @@ export function XtreamApp() {
       return;
     }
     if (!draft) {
-      setNotice("Type an address or a few words to search.");
+      setNotice("Type an address or search keywords.");
       return;
     }
     setOverlay(null);
@@ -258,24 +266,29 @@ export function XtreamApp() {
         <TvButton
           primary
           onClick={() => setAsleep(false)}
-          className="grid min-h-24 place-items-center gap-3 bg-surface px-8"
+          className="grid min-h-24 place-items-center gap-3 rounded-2xl glass-card px-10 py-8"
         >
-          <img src="/xtream-icon.png" alt="" className="mx-auto h-20 w-20 rounded-2xl" />
-          <span className="text-lg font-semibold text-fg">Press OK to wake Xtream</span>
+          <img src="/xtream-icon.png" alt="" className="mx-auto size-20 rounded-2xl shadow-xl" />
+          <span className="text-xl font-bold text-fg">Press OK or Click to Wake Xtream</span>
         </TvButton>
       </div>
     );
   } else if (confirmExit) {
     body = (
       <div className="grid h-full place-items-center bg-bg px-6">
-        <div className="w-full max-w-lg text-center" role="dialog" aria-modal="true" aria-label="Exit Xtream">
-          <h1 className="font-display text-4xl text-fg">Turn off Xtream?</h1>
-          <p className="mt-3 text-base text-muted">Bookmarks and history stay on this device.</p>
+        <div
+          className="w-full max-w-md rounded-3xl glass-card p-8 text-center"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Exit Xtream"
+        >
+          <h1 className="font-display text-3xl font-bold text-fg">Turn off Xtream?</h1>
+          <p className="mt-2 text-sm text-muted">Bookmarks, history, and settings stay saved on this device.</p>
           <div className="mt-6 flex justify-center gap-3">
             <TvButton
               primary
               onClick={() => setConfirmExit(false)}
-              className="min-h-12 bg-amber px-6 font-semibold text-amber-ink"
+              className="px-6 py-2.5 rounded-xl font-bold text-sm"
             >
               Stay
             </TvButton>
@@ -284,9 +297,10 @@ export function XtreamApp() {
                 setConfirmExit(false);
                 setAsleep(true);
               }}
-              className="min-h-12 bg-surface px-6 font-semibold text-fg"
+              variant="surface"
+              className="px-6 py-2.5 rounded-xl font-bold text-sm"
             >
-              Turn off
+              Sleep
             </TvButton>
           </div>
         </div>
@@ -325,8 +339,11 @@ export function XtreamApp() {
       <HomeScreen
         engineName={engineLabel(settings.searchEngine)}
         history={history}
+        bookmarksCount={bookmarks.length}
         onOpen={openAddress}
         onBookmarks={() => setStack((s) => [...s, { id: "bookmarks" }])}
+        onHistory={() => setStack((s) => [...s, { id: "history" }])}
+        onSettings={() => setStack((s) => [...s, { id: "settings" }])}
       />
     );
   } else if (top.id === "results") {
@@ -379,18 +396,19 @@ export function XtreamApp() {
     body = (
       <ListScreen
         title="Bookmarks"
-        empty="No bookmarks yet. Open a page or video and press the star."
+        empty="No bookmarks yet. Open a page or video and press the star to save."
         rows={bookmarks.map((item) => ({ id: item.id, title: item.title, url: item.url }))}
         onBack={back}
         onOpen={openAddress}
         onRemove={removeBookmark}
+        onClearAll={clearBookmarks}
       />
     );
   } else if (top.id === "history") {
     body = (
       <ListScreen
         title="History"
-        empty="Nothing opened yet."
+        empty="No browsing history recorded yet."
         rows={history.map((item) => ({
           id: item.id,
           title: item.title,
@@ -404,6 +422,7 @@ export function XtreamApp() {
           if (!entry) return;
           useTv.setState({ history: useTv.getState().history.filter((item) => item.url !== entry.url) });
         }}
+        onClearAll={clearHistory}
       />
     );
   } else if (top.id === "settings") {
@@ -431,11 +450,87 @@ export function XtreamApp() {
     );
   }
 
+  const isMobileFrame = settings.deviceMode === "mobile";
+  const isTvFrame = settings.deviceMode === "tv";
+  const activeTab =
+    top.id === "bookmarks"
+      ? "bookmarks"
+      : top.id === "history"
+        ? "history"
+        : top.id === "settings"
+          ? "settings"
+          : "home";
+
   return (
-    <div className="phone-stage">
-      <div id="focus-root" className="phone-shell text-fg">
-        {body}
+    <div className="viewport-outer">
+      {/* Top Device Switcher Controls */}
+      <DeviceSwitcherBar
+        mode={settings.deviceMode}
+        orientation={settings.mobileOrientation}
+        virtualRemote={settings.virtualRemote}
+        onModeChange={(mode) => updateSettings({ deviceMode: mode })}
+        onOrientationToggle={() =>
+          updateSettings({
+            mobileOrientation: settings.mobileOrientation === "portrait" ? "landscape" : "portrait",
+          })
+        }
+        onVirtualRemoteToggle={() => updateSettings({ virtualRemote: !settings.virtualRemote })}
+      />
+
+      {/* Main Viewport Container */}
+      <div className="flex-1 w-full flex items-center justify-center p-0 md:p-3 overflow-hidden">
+        <div
+          id="focus-root"
+          className={clsx(
+            "text-fg flex flex-col relative",
+            isTvFrame && "device-frame-tv",
+            isMobileFrame &&
+              (settings.mobileOrientation === "portrait"
+                ? "device-frame-mobile-portrait"
+                : "device-frame-mobile-landscape"),
+            !isTvFrame && !isMobileFrame && "device-frame-fluid",
+          )}
+        >
+          {/* Dynamic Island and Status Bar in Mobile Portrait */}
+          {isMobileFrame && settings.mobileOrientation === "portrait" && (
+            <>
+              <div className="mobile-dynamic-island">
+                <span className="size-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="size-2 rounded-full bg-amber/80" />
+              </div>
+              <div className="mobile-status-bar">
+                <span>9:41</span>
+                <div className="flex items-center gap-1.5 text-[10px]">
+                  <span>5G</span>
+                  <span>100%</span>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Screen Content */}
+          <div className="flex-1 min-h-0 relative overflow-hidden flex flex-col">
+            {body}
+          </div>
+
+          {/* Mobile Bottom Dock Bar */}
+          {isMobileFrame && (
+            <MobileBottomDock
+              activeTab={activeTab}
+              bookmarkCount={bookmarks.length}
+              onNavigate={(tab) => {
+                if (tab === "home") setStack([{ id: "home" }]);
+                else setStack([{ id: "home" }, { id: tab }]);
+              }}
+            />
+          )}
+        </div>
       </div>
+
+      {/* Floating Virtual TV Remote Controller */}
+      {settings.virtualRemote && (
+        <VirtualRemote onClose={() => updateSettings({ virtualRemote: false })} />
+      )}
     </div>
   );
 }
@@ -456,7 +551,7 @@ function PlayerChrome(props: {
     return () => window.removeEventListener("xtream-show-chrome", onShow);
   }, []);
   return (
-    <div id="player-root">
+    <div id="player-root" className="h-full w-full">
       <Player
         {...props}
         hideControls={props.hideControls}

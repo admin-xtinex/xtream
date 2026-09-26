@@ -1,5 +1,19 @@
 import { useEffect, useRef, useState } from "react";
-import { Pause, Play, RotateCcw, RotateCw, Star, Volume2, VolumeX } from "lucide-react";
+import {
+  FastForward,
+  Maximize2,
+  Minimize2,
+  Pause,
+  Play,
+  RotateCcw,
+  RotateCw,
+  Sliders,
+  Star,
+  Tv,
+  Volume2,
+  VolumeX,
+  X,
+} from "lucide-react";
 import { TvButton } from "@/components/tv/ui";
 import type { MediaFormat } from "@/lib/tv/types";
 
@@ -35,12 +49,15 @@ export function Player({
 }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const seekRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [fatal, setFatal] = useState<string | null>(format === "dash" ? "dash" : null);
   const [playing, setPlaying] = useState(false);
   const [time, setTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [muted, setMuted] = useState(false);
+  const [playbackRate, setPlaybackRate] = useState(1);
   const [chromeOn, setChromeOn] = useState(true);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
     setFatal(format === "dash" ? "dash" : null);
@@ -55,6 +72,7 @@ export function Player({
     if (!video || format === "dash") return;
     let dead = false;
     let hls: { destroy: () => void } | null = null;
+
     const onError = () => {
       if (!dead) setFatal("play");
     };
@@ -62,6 +80,7 @@ export function Player({
     const onMeta = () => setDuration(video.duration || 0);
     const onPlay = () => setPlaying(true);
     const onPause = () => setPlaying(false);
+
     video.addEventListener("error", onError);
     video.addEventListener("timeupdate", onTime);
     video.addEventListener("durationchange", onMeta);
@@ -134,7 +153,7 @@ export function Player({
 
   useEffect(() => {
     if (!hideControls || !playing || !chromeOn) return;
-    const id = window.setTimeout(() => setChromeOn(false), 4000);
+    const id = window.setTimeout(() => setChromeOn(false), 4500);
     return () => window.clearTimeout(id);
   }, [hideControls, playing, chromeOn]);
 
@@ -152,128 +171,139 @@ export function Player({
     setMuted(video.muted);
   }
 
+  function cycleSpeed() {
+    const video = videoRef.current;
+    if (!video) return;
+    const rates = [1, 1.25, 1.5, 2, 0.75];
+    const nextIdx = (rates.indexOf(playbackRate) + 1) % rates.length;
+    const nextRate = rates[nextIdx];
+    video.playbackRate = nextRate;
+    setPlaybackRate(nextRate);
+  }
+
+  function toggleFullscreen() {
+    if (!document.fullscreenElement) {
+      void containerRef.current?.requestFullscreen?.();
+      setIsFullscreen(true);
+    } else {
+      void document.exitFullscreen?.();
+      setIsFullscreen(false);
+    }
+  }
+
+  function handleSeekClick(e: React.MouseEvent<HTMLDivElement>) {
+    const video = videoRef.current;
+    const rect = e.currentTarget.getBoundingClientRect();
+    if (!video || !Number.isFinite(video.duration) || rect.width === 0) return;
+    const clickX = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
+    const targetPct = clickX / rect.width;
+    video.currentTime = targetPct * video.duration;
+  }
+
   const seekable = Number.isFinite(duration) && duration > 0;
   const pct = seekable ? Math.min(100, (time / duration) * 100) : 0;
 
   if (fatal) {
     const message =
       fatal === "dash"
-        ? "This stream uses MPEG-DASH, which this player does not support."
+        ? "This stream uses MPEG-DASH, which is not supported in this lightweight engine."
         : fatal === "hls"
-          ? "This browser cannot play that HLS stream."
-          : "This video cannot be played on this device.";
+          ? "This browser cannot decode that HLS manifest."
+          : "This video cannot be played directly on this device.";
     return (
       <div className="flex h-full flex-col items-center justify-center gap-6 bg-bg-deep px-6 text-center">
-        <p className="text-sm font-semibold tracking-widest text-amber uppercase">Video</p>
-        <h1 className="max-w-xl font-display text-4xl text-fg">{message}</h1>
-        <p className="max-w-md text-base text-muted">
-          Xtream plays ordinary HTML5 video. It does not bypass sign-in, DRM, or regional limits.
+        <p className="text-xs font-bold tracking-widest text-amber uppercase">Stream Refused</p>
+        <h1 className="max-w-xl font-display text-3xl sm:text-4xl text-fg font-bold">{message}</h1>
+        <p className="max-w-md text-sm text-muted">
+          Xtream plays direct HTML5 and HLS video files. DRM protected and token-expired media stay closed.
         </p>
-        <div className="flex gap-3">
-          <TvButton
-            primary
-            onClick={onBack}
-            className="min-h-12 bg-amber px-6 font-semibold text-amber-ink"
-          >
-            Back
-          </TvButton>
-        </div>
+        <TvButton
+          primary
+          onClick={onBack}
+          className="px-8 py-3 rounded-xl font-bold text-sm"
+        >
+          Return to Browser
+        </TvButton>
       </div>
     );
   }
 
   return (
     <div
+      ref={containerRef}
       id={chromeOn ? undefined : "player-chrome-hidden"}
-      className="relative h-full bg-bg-deep"
+      className="relative h-full w-full bg-black select-none overflow-hidden group cursor-pointer"
+      onMouseMove={() => setChromeOn(true)}
+      onClick={() => setChromeOn((on) => !on)}
     >
       <video
         ref={videoRef}
-        className="h-full w-full bg-bg-deep object-contain"
+        className="h-full w-full bg-black object-contain"
         playsInline
         preload="metadata"
-        onClick={() => setChromeOn((on) => !on)}
       />
+
+      {/* Chrome Overlay */}
       {chromeOn ? (
-        <div className="absolute inset-0 flex flex-col justify-between">
-          <div className="flex items-start justify-between gap-4 bg-bg-deep/80 px-5 pt-5 pb-8 md:px-8">
-            <div className="min-w-0">
-              <p className="text-sm font-semibold tracking-widest text-amber uppercase">Now playing</p>
-              <h1 className="mt-1 truncate font-display text-3xl text-fg md:text-4xl">{title}</h1>
-            </div>
-            <TvButton
-              aria-label={bookmarked ? "Remove bookmark" : "Save bookmark"}
-              aria-pressed={bookmarked}
-              onClick={onToggleBookmark}
-              className="grid size-12 shrink-0 place-items-center rounded-full bg-surface text-fg"
-            >
-              <Star className="size-5" fill={bookmarked ? "currentColor" : "none"} />
-            </TvButton>
-          </div>
-          <div className="bg-bg-deep/90 px-5 pt-6 pb-5 md:px-8" onClick={(event) => event.stopPropagation()}>
-            {!playing ? (
-              <div className="mb-4 flex justify-center">
-                <TvButton
-                  primary
-                  data-player-play=""
-                  onClick={toggle}
-                  aria-label="Play"
-                  className="grid size-16 place-items-center rounded-full bg-amber text-amber-ink"
-                >
-                  <Play className="size-7" fill="currentColor" />
-                </TvButton>
-              </div>
-            ) : null}
-            <div className="flex flex-wrap items-center gap-2">
-              <TvButton
-                data-player-play=""
-                onClick={toggle}
-                aria-label={playing ? "Pause" : "Play"}
-                className="grid size-12 place-items-center rounded-full bg-surface text-fg"
-              >
-                {playing ? <Pause className="size-5" /> : <Play className="size-5" fill="currentColor" />}
-              </TvButton>
-              <TvButton
-                onClick={() => {
-                  const video = videoRef.current;
-                  if (video) video.currentTime = Math.max(0, video.currentTime - 10);
-                }}
-                aria-label="Back 10 seconds"
-                className="flex min-h-12 items-center gap-2 rounded-full bg-surface px-4 text-fg"
-              >
-                <RotateCcw className="size-4" />
-                10s
-              </TvButton>
-              <TvButton
-                onClick={() => {
-                  const video = videoRef.current;
-                  if (!video || !Number.isFinite(video.duration)) return;
-                  video.currentTime = Math.min(video.duration, video.currentTime + 10);
-                }}
-                aria-label="Forward 10 seconds"
-                className="flex min-h-12 items-center gap-2 rounded-full bg-surface px-4 text-fg"
-              >
-                <RotateCw className="size-4" />
-                10s
-              </TvButton>
-              <TvButton
-                onClick={toggleMute}
-                aria-label={muted ? "Unmute" : "Mute"}
-                className="grid size-12 place-items-center rounded-full bg-surface text-fg"
-              >
-                {muted ? <VolumeX className="size-5" /> : <Volume2 className="size-5" />}
-              </TvButton>
-              <span className="ml-auto text-sm text-fg tabular-nums">
-                {clock(time)}
-                {seekable ? ` / ${clock(duration)}` : ""}
-              </span>
+        <div
+          className="absolute inset-0 flex flex-col justify-between z-30 transition-opacity duration-300"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Top Bar with Title, Format Badge, Bookmark, and Close */}
+          <div className="flex items-center justify-between gap-4 bg-gradient-to-b from-black/90 via-black/60 to-transparent p-5 sm:p-7">
+            <div className="min-w-0 flex items-center gap-3">
               <TvButton
                 onClick={onBack}
-                className="min-h-12 rounded-full bg-surface px-4 font-semibold text-fg"
+                aria-label="Back"
+                className="grid size-11 shrink-0 place-items-center rounded-2xl glass-panel text-fg hover:border-amber/50"
               >
-                Exit
+                <X className="size-5" />
+              </TvButton>
+
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold tracking-widest text-amber uppercase">
+                    Cinema Player
+                  </span>
+                  <span className="rounded-full bg-amber/20 border border-amber/40 px-2 py-0.2 text-[10px] font-bold text-amber uppercase">
+                    {format.toUpperCase()}
+                  </span>
+                </div>
+                <h1 className="truncate font-display text-xl sm:text-2xl text-fg font-bold mt-0.5 max-w-xl">
+                  {title}
+                </h1>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <TvButton
+                aria-label={bookmarked ? "Remove bookmark" : "Save bookmark"}
+                aria-pressed={bookmarked}
+                onClick={onToggleBookmark}
+                className="grid size-11 place-items-center rounded-2xl glass-panel text-fg hover:border-amber/50"
+              >
+                <Star className="size-5" fill={bookmarked ? "currentColor" : "none"} />
               </TvButton>
             </div>
+          </div>
+
+          {/* Large Center Play / Pause Pulsing Button when Paused */}
+          {!playing && (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <button
+                type="button"
+                onClick={toggle}
+                className="pointer-events-auto grid size-20 place-items-center rounded-full bg-gradient-to-br from-amber to-blue-600 text-amber-ink shadow-[0_0_40px_rgba(62,203,255,0.6)] hover:scale-105 active:scale-95 transition"
+                aria-label="Play"
+              >
+                <Play className="size-9 fill-current ml-1" />
+              </button>
+            </div>
+          )}
+
+          {/* Bottom Player Controls & Scrub Bar */}
+          <div className="bg-gradient-to-t from-black/95 via-black/75 to-transparent px-5 pt-8 pb-6 sm:px-8">
+            {/* Interactive Scrub Bar */}
             <div
               ref={seekRef}
               data-tv=""
@@ -284,18 +314,100 @@ export function Player({
               aria-valuemin={0}
               aria-valuemax={seekable ? Math.round(duration) : 0}
               aria-valuenow={Math.round(time)}
-              className="tv mt-4 flex h-12 items-center"
+              onClick={handleSeekClick}
+              className="tv group/bar relative flex h-7 items-center cursor-pointer"
             >
-              <span className="relative h-2 w-full rounded-full bg-surface-2">
-                <span className="absolute inset-y-0 left-0 rounded-full bg-amber" style={{ width: `${pct}%` }} />
-              </span>
+              <div className="relative h-2 w-full rounded-full bg-surface-2/80 overflow-hidden group-hover/bar:h-3 transition-all duration-150">
+                <div
+                  className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-amber to-magenta shadow-[0_0_12px_#3ecbff]"
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+              {/* Scrub Thumb Handle */}
+              <div
+                className="absolute size-4 rounded-full bg-white shadow-lg pointer-events-none -translate-x-1/2 group-hover/bar:scale-125 transition"
+                style={{ left: `${pct}%` }}
+              />
             </div>
-            <p className="mt-2 text-sm text-muted">Left and right on the bar seek. Back leaves the video.</p>
+
+            {/* Action Buttons Row */}
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-2">
+                <TvButton
+                  data-player-play=""
+                  onClick={toggle}
+                  aria-label={playing ? "Pause" : "Play"}
+                  className="grid size-11 place-items-center rounded-xl bg-amber text-amber-ink font-bold shadow-md"
+                >
+                  {playing ? <Pause className="size-5" /> : <Play className="size-5 fill-current" />}
+                </TvButton>
+
+                <TvButton
+                  onClick={() => {
+                    const video = videoRef.current;
+                    if (video) video.currentTime = Math.max(0, video.currentTime - 10);
+                  }}
+                  aria-label="Rewind 10 seconds"
+                  className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl bg-surface/80 text-fg hover:border-amber/50 font-semibold"
+                >
+                  <RotateCcw className="size-4 text-amber" />
+                  <span>10s</span>
+                </TvButton>
+
+                <TvButton
+                  onClick={() => {
+                    const video = videoRef.current;
+                    if (!video || !Number.isFinite(video.duration)) return;
+                    video.currentTime = Math.min(video.duration, video.currentTime + 10);
+                  }}
+                  aria-label="Forward 10 seconds"
+                  className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl bg-surface/80 text-fg hover:border-amber/50 font-semibold"
+                >
+                  <RotateCw className="size-4 text-amber" />
+                  <span>10s</span>
+                </TvButton>
+
+                <TvButton
+                  onClick={toggleMute}
+                  aria-label={muted ? "Unmute" : "Mute"}
+                  className="grid size-11 place-items-center rounded-xl bg-surface/80 text-fg hover:border-amber/50"
+                >
+                  {muted ? <VolumeX className="size-5 text-danger" /> : <Volume2 className="size-5 text-amber" />}
+                </TvButton>
+
+                {/* Speed toggle */}
+                <TvButton
+                  onClick={cycleSpeed}
+                  aria-label="Speed"
+                  className="flex items-center gap-1 px-3 py-2.5 rounded-xl bg-surface/80 text-fg hover:border-amber/50 font-semibold"
+                >
+                  <FastForward className="size-3.5 text-magenta" />
+                  <span>{playbackRate}x</span>
+                </TvButton>
+              </div>
+
+              {/* Time display & Fullscreen */}
+              <div className="flex items-center gap-3">
+                <span className="font-mono text-xs sm:text-sm text-fg/90 tabular-nums">
+                  <span className="text-amber font-semibold">{clock(time)}</span>
+                  {seekable && <span className="text-muted"> / {clock(duration)}</span>}
+                </span>
+
+                <TvButton
+                  onClick={toggleFullscreen}
+                  aria-label="Toggle Fullscreen"
+                  className="grid size-11 place-items-center rounded-xl bg-surface/80 text-fg hover:border-amber/50"
+                >
+                  {isFullscreen ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
+                </TvButton>
+              </div>
+            </div>
           </div>
         </div>
       ) : (
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-1 bg-surface">
-          <div className="h-full bg-amber" style={{ width: `${pct}%` }} />
+        /* Subtle bottom mini-progress line when controls are hidden */
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-1 bg-surface-2/60">
+          <div className="h-full bg-gradient-to-r from-amber to-magenta" style={{ width: `${pct}%` }} />
         </div>
       )}
     </div>

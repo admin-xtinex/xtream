@@ -16,12 +16,18 @@ export type HistoryEntry = {
   visitedAt: number;
 };
 
+export type DeviceMode = "tv" | "mobile" | "auto";
+export type MobileOrientation = "portrait" | "landscape";
+
 export type Settings = {
   homepage: string;
   searchEngine: Engine;
   browserMode: BrowserMode;
   javascriptEnabled: boolean;
   hideControlsWhilePlaying: boolean;
+  deviceMode: DeviceMode;
+  mobileOrientation: MobileOrientation;
+  virtualRemote: boolean;
 };
 
 type Persisted = {
@@ -47,12 +53,24 @@ export const defaultSettings: Settings = {
   browserMode: "standard",
   javascriptEnabled: true,
   hideControlsWhilePlaying: true,
+  deviceMode: "auto",
+  mobileOrientation: "portrait",
+  virtualRemote: false,
 };
+
+export const defaultBookmarks: Bookmark[] = [
+  {
+    id: "default-ogomovies",
+    title: "OgoMovies",
+    url: "https://ogomovies2.com.pk/",
+    createdAt: 1710000000000,
+  },
+];
 
 export const useTv = create<Store>()(
   persist(
     (set, get) => ({
-      bookmarks: [],
+      bookmarks: defaultBookmarks,
       history: [],
       settings: defaultSettings,
       isBookmarked: (url) => get().bookmarks.some((item) => item.url === url),
@@ -97,9 +115,11 @@ export const useTv = create<Store>()(
       }),
       merge: (persisted, current) => {
         const saved = (persisted ?? {}) as Partial<Persisted>;
+        const loadedBookmarks = saved.bookmarks ?? [];
+        const hasOgo = loadedBookmarks.some((b) => b.url.includes("ogomovies2.com.pk"));
         return {
           ...current,
-          bookmarks: saved.bookmarks ?? [],
+          bookmarks: loadedBookmarks.length === 0 ? defaultBookmarks : (hasOgo ? loadedBookmarks : [...defaultBookmarks, ...loadedBookmarks]),
           history: saved.history ?? [],
           settings: { ...defaultSettings, ...saved.settings },
         };

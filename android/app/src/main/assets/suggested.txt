@@ -1,6 +1,7 @@
 # One link per line: Name|https://example.com
 # A GitHub Actions variable named XTREAM_URLS replaces this file at build time.
 # You can also pass the same text when you run the Build APK workflow by hand.
+OgoMovies|https://ogomovies2.com.pk/
 Wikipedia|https://www.wikipedia.org
 Internet Archive|https://archive.org
 NASA|https://www.nasa.gov

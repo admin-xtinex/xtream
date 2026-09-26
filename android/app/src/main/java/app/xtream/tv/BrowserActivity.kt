@@ -6,6 +6,7 @@ import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.net.Uri
 import android.os.Bundle
+import android.util.Log
 import android.view.KeyEvent
 import android.view.View
 import android.view.animation.AnimationUtils
@@ -18,6 +19,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.FrameLayout
+import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
@@ -25,18 +27,16 @@ import androidx.webkit.WebViewFeature
 class BrowserActivity : Activity() {
     private lateinit var web: WebView
     private lateinit var chrome: View
-    private lateinit var download: Button
     private lateinit var gate: View
     private lateinit var loadRing: View
     private lateinit var titleView: TextView
     private lateinit var save: Button
+    private lateinit var progress: ProgressBar
     private var customView: View? = null
     private var customCallback: WebChromeClient.CustomViewCallback? = null
     private var homeHost: String = ""
     @Volatile
     private var pageHost: String = ""
-    private var pendingVideo: Pair<String, String?>? = null
-    private var pendingMime: String? = null
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -44,11 +44,11 @@ class BrowserActivity : Activity() {
         setContentView(R.layout.activity_browser)
         web = findViewById(R.id.web)
         chrome = findViewById(R.id.chrome)
-        download = findViewById(R.id.download)
         gate = findViewById(R.id.gate)
         loadRing = findViewById(R.id.load_ring)
         titleView = findViewById(R.id.page_title)
         save = findViewById(R.id.save)
+        progress = findViewById(R.id.progress)
         val block = findViewById<Button>(R.id.block)
         val rotate = findViewById<Button>(R.id.rotate)
         val home = findViewById<Button>(R.id.home)
@@ -74,7 +74,10 @@ class BrowserActivity : Activity() {
             web.settings.safeBrowsingEnabled = true
         }
         web.settings.javaScriptCanOpenWindowsAutomatically = false
-        web.setDownloadListener { url, agent, _, mime, _ -> saveVideoFile(url, agent, mime) }
+        web.settings.setSupportMultipleWindows(true)
+        web.setDownloadListener { url, _, _, _, _ ->
+            Log.d("Xtream", "Download ignored (downloads not supported): $url")
+        }
         web.isLongClickable = false
         web.setOnLongClickListener { true }
         val cookies = android.webkit.CookieManager.getInstance()
@@ -107,7 +110,6 @@ class BrowserActivity : Activity() {
                         ),
                     )
                 }
-                showDownload()
             }
 
             override fun onHideCustomView() {
@@ -116,7 +118,6 @@ class BrowserActivity : Activity() {
                 customView = null
                 customCallback?.onCustomViewHidden()
                 customCallback = null
-                hideDownload()
                 chrome.visibility = View.VISIBLE
                 if (!isTv) {
                     requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
@@ -134,21 +135,59 @@ class BrowserActivity : Activity() {
             ) {
                 callback?.invoke(origin, false, false)
             }
+
+            override fun onCreateWindow(
+                view: WebView?,
+                isDialog: Boolean,
+                isUserGesture: Boolean,
+                resultMsg: android.os.Message?,
+            ): Boolean {
+                Log.d("XtreamAdBlock", "POPUP WINDOW BLOCKED: ${view?.url}")
+                return false
+            }
+
+            override fun onProgressChanged(view: WebView?, newProgress: Int) {
+                if (newProgress < 100) {
+                    progress.visibility = View.VISIBLE
+                    progress.progress = newProgress
+                } else {
+                    progress.visibility = View.GONE
+                }
+            }
         }
         web.webChromeClient = chromeClient
         web.webViewClient = object : WebViewClient() {
             override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
-                return if (AdBlock.blocked(this@BrowserActivity, request.url, pageHost, request.isForMainFrame, request.requestHeaders)) {
+                val blocked = AdBlock.blocked(this@BrowserActivity, request.url, pageHost, request.isForMainFrame, request.requestHeaders)
+                return if (blocked) {
+                    Log.d("XtreamAdBlock", "BLOCKED: ${request.url}")
                     AdBlock.emptyResponse(request.url)
                 } else {
+                    Log.v("XtreamAdBlock", "ALLOWED: ${request.url}")
                     null
                 }
             }
 
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                if (AdBlock.isUnsafe(request.url) || AdBlock.isDownload(request.url)) return true
-                if (request.isForMainFrame && !sameSite(request.url.host) && AdBlock.isAd(this@BrowserActivity, request.url)) {
+                val url = request.url
+                if (AdBlock.isUnsafe(url) || AdBlock.isDownload(url)) {
+                    Log.d("XtreamAdBlock", "OVERRIDE BLOCKED (unsafe/download): $url")
                     return true
+                }
+                if (AdBlock.isAd(this@BrowserActivity, url)) {
+                    Log.d("XtreamAdBlock", "OVERRIDE BLOCKED (ad url): $url")
+                    return true
+                }
+                val targetHost = url.host?.lowercase()?.removePrefix("www.").orEmpty()
+                if (request.isForMainFrame && !sameSite(targetHost)) {
+                    if (!request.hasGesture()) {
+                        Log.d("XtreamAdBlock", "OVERRIDE BLOCKED (unsolicited redirect without gesture): $url")
+                        return true
+                    }
+                    if (AdBlock.isAd(this@BrowserActivity, url)) {
+                        Log.d("XtreamAdBlock", "OVERRIDE BLOCKED (cross-site ad navigation): $url")
+                        return true
+                    }
                 }
                 return false
             }
@@ -157,9 +196,10 @@ class BrowserActivity : Activity() {
                 val uri = Uri.parse(url)
                 val host = uri.host?.lowercase()?.removePrefix("www.").orEmpty()
                 if (host.isNotBlank() && !AdBlock.isAd(this@BrowserActivity, uri)) pageHost = host
-                if (!sameSite(uri.host) && AdBlock.isAd(this@BrowserActivity, uri) && view.canGoBack()) {
+                if (!sameSite(uri.host) && AdBlock.isAd(this@BrowserActivity, uri)) {
+                    Log.d("XtreamAdBlock", "PAGE STARTED BLOCKED (ad host): $uri")
                     view.stopLoading()
-                    view.goBack()
+                    if (view.canGoBack()) view.goBack()
                     return
                 }
                 view.evaluateJavascript(PAGE_HOOK, null)
@@ -201,13 +241,26 @@ class BrowserActivity : Activity() {
             Library.toggleBookmark(this, url, title)
             refreshSave()
         }
-        findViewById<Button>(R.id.video).setOnClickListener { saveCurrentVideo() }
-        download.setOnClickListener { saveCurrentVideo() }
-        home.setOnKeyListener { _, keyCode, event ->
-            event.action == KeyEvent.ACTION_DOWN && keyCode == KeyEvent.KEYCODE_DPAD_DOWN && web.requestFocus()
+        val optionsBtn = findViewById<Button>(R.id.video)
+        optionsBtn.text = getString(R.string.video)
+        optionsBtn.setOnClickListener {
+            showPlayerOptionsMenu()
         }
+        val dpadDownToWeb = View.OnKeyListener { _, keyCode, event ->
+            if (event.action == KeyEvent.ACTION_DOWN && keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+                web.requestFocus()
+                true
+            } else {
+                false
+            }
+        }
+        home.setOnKeyListener(dpadDownToWeb)
+        rotate.setOnKeyListener(dpadDownToWeb)
+        block.setOnKeyListener(dpadDownToWeb)
+        optionsBtn.setOnKeyListener(dpadDownToWeb)
+        save.setOnKeyListener(dpadDownToWeb)
 
-        val start = intent.getStringExtra(EXTRA_URL)
+        val start = intent.getStringExtra(EXTRA_URL) ?: intent.dataString
         if (start.isNullOrBlank()) {
             finish()
             return
@@ -250,67 +303,117 @@ class BrowserActivity : Activity() {
         val url = web.url
         val saved = url != null && Library.isBookmarked(this, url)
         save.text = getString(if (saved) R.string.saved else R.string.save)
+        save.setBackgroundResource(if (saved) R.drawable.bg_go else R.drawable.bg_tile)
+        save.setTextColor(if (saved) 0xFF041018.toInt() else 0xFFF4F7FF.toInt())
     }
 
-    private fun showDownload() {
-        download.visibility = View.VISIBLE
-        download.bringToFront()
+    private fun showPlayerOptionsMenu() {
+        web.evaluateJavascript("window.__xtreamToggleOptions && window.__xtreamToggleOptions()", null)
+        val items = arrayOf(
+            "⏯ Play / Pause",
+            "⏪ Rewind 10s",
+            "⏩ Forward 10s",
+            "⏭ Next Episode / Server",
+            "📺 Video Quality (1080p, 720p...)",
+            "⚡ Playback Speed",
+            "📐 Aspect Ratio",
+        )
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Player Options")
+            .setItems(items) { _, which ->
+                when (which) {
+                    0 -> web.evaluateJavascript("window.__xtreamTogglePlay && window.__xtreamTogglePlay()", null)
+                    1 -> {
+                        web.evaluateJavascript("window.__xtreamNudge && window.__xtreamNudge(-10)", null)
+                        android.widget.Toast.makeText(this, "⏪ Rewound 10s", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                    2 -> {
+                        web.evaluateJavascript("window.__xtreamNudge && window.__xtreamNudge(10)", null)
+                        android.widget.Toast.makeText(this, "⏩ Forwarded 10s", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                    3 -> {
+                        web.evaluateJavascript("window.__xtreamNext && window.__xtreamNext()", null)
+                        android.widget.Toast.makeText(this, "⏭ Next episode / server", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                    4 -> showQualityDialog()
+                    5 -> showSpeedDialog()
+                    6 -> showAspectDialog()
+                }
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 
-    private fun hideDownload() {
-        download.visibility = View.GONE
+    private fun showQualityDialog() {
+        val qualities = arrayOf("Auto", "1080p", "720p", "480p", "360p")
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Select Video Quality")
+            .setItems(qualities) { _, which ->
+                val q = qualities[which].lowercase().replace("p", "")
+                web.evaluateJavascript("window.__xtreamSetQuality && window.__xtreamSetQuality('$q')", null)
+                android.widget.Toast.makeText(this, "Quality: ${qualities[which]}", android.widget.Toast.LENGTH_SHORT).show()
+            }
+            .show()
     }
 
-    private fun saveCurrentVideo() {
-        web.evaluateJavascript(CURRENT_SRC) { raw ->
-            val url = raw?.trim()?.removeSurrounding("\"")?.replace("\\/", "/")?.replace("\\\"", "\"").orEmpty()
-            saveVideoFile(url, CHROME_AGENT, null)
-        }
+    private fun showSpeedDialog() {
+        val speeds = arrayOf("0.75x", "1.0x (Normal)", "1.25x", "1.5x", "2.0x")
+        val values = arrayOf("0.75", "1.0", "1.25", "1.5", "2.0")
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Select Playback Speed")
+            .setItems(speeds) { _, which ->
+                val s = values[which]
+                web.evaluateJavascript("if (window.__xtreamVideo) window.__xtreamVideo.playbackRate = $s;", null)
+                android.widget.Toast.makeText(this, "Speed: ${speeds[which]}", android.widget.Toast.LENGTH_SHORT).show()
+            }
+            .show()
     }
 
-    private fun saveVideoFile(raw: String, userAgent: String?, mime: String?) {
-        val name = AdBlock.videoName(raw, mime)
-        if (name == null) {
-            android.widget.Toast.makeText(this, R.string.not_video, android.widget.Toast.LENGTH_SHORT).show()
-            return
-        }
-        if (android.os.Build.VERSION.SDK_INT <= 28 &&
-            checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE) != android.content.pm.PackageManager.PERMISSION_GRANTED
-        ) {
-            pendingVideo = raw to userAgent
-            pendingMime = mime
-            requestPermissions(arrayOf(android.Manifest.permission.WRITE_EXTERNAL_STORAGE), 21)
-            return
-        }
-        val manager = getSystemService(DOWNLOAD_SERVICE) as android.app.DownloadManager
-        val request = android.app.DownloadManager.Request(Uri.parse(raw))
-            .setTitle(name)
-            .setMimeType(mime?.takeIf { it.startsWith("video/") } ?: "video/mp4")
-            .setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-            .setDestinationInExternalPublicDir(android.os.Environment.DIRECTORY_DOWNLOADS, name)
-        val agent = userAgent?.ifBlank { CHROME_AGENT } ?: CHROME_AGENT
-        request.addRequestHeader("User-Agent", agent)
-        android.webkit.CookieManager.getInstance().getCookie(raw)?.let { request.addRequestHeader("Cookie", it) }
-        try {
-            manager.enqueue(request)
-            android.widget.Toast.makeText(this, getString(R.string.saving, name), android.widget.Toast.LENGTH_SHORT).show()
-        } catch (_: Exception) {
-            android.widget.Toast.makeText(this, R.string.not_video, android.widget.Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == 21 && grantResults.firstOrNull() == android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            val pending = pendingVideo ?: return
-            saveVideoFile(pending.first, pending.second, pendingMime)
-        }
+    private fun showAspectDialog() {
+        val aspects = arrayOf("Fit (Contain)", "Fill (Cover)", "Stretch")
+        val values = arrayOf("contain", "cover", "fill")
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Select Aspect Ratio")
+            .setItems(aspects) { _, which ->
+                val a = values[which]
+                web.evaluateJavascript("if (window.__xtreamVideo) window.__xtreamVideo.style.objectFit = '$a';", null)
+                android.widget.Toast.makeText(this, "Aspect: ${aspects[which]}", android.widget.Toast.LENGTH_SHORT).show()
+            }
+            .show()
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
-        if (keyCode == KeyEvent.KEYCODE_DPAD_UP && web.scrollY == 0 && web.hasFocus()) {
-            findViewById<Button>(R.id.home).requestFocus()
-            return true
+        when (keyCode) {
+            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.KEYCODE_MEDIA_PAUSE -> {
+                web.evaluateJavascript("window.__xtreamTogglePlay && window.__xtreamTogglePlay()", null)
+                return true
+            }
+            KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
+                web.evaluateJavascript("window.__xtreamNudge && window.__xtreamNudge(10)", null)
+                return true
+            }
+            KeyEvent.KEYCODE_MEDIA_REWIND -> {
+                web.evaluateJavascript("window.__xtreamNudge && window.__xtreamNudge(-10)", null)
+                return true
+            }
+            KeyEvent.KEYCODE_MEDIA_NEXT -> {
+                web.evaluateJavascript("window.__xtreamNext && window.__xtreamNext()", null)
+                return true
+            }
+            KeyEvent.KEYCODE_MENU -> {
+                showPlayerOptionsMenu()
+                return true
+            }
+            KeyEvent.KEYCODE_DPAD_UP -> {
+                if (chrome.visibility != View.VISIBLE) {
+                    chrome.visibility = View.VISIBLE
+                    findViewById<Button>(R.id.home).requestFocus()
+                    return true
+                } else if (web.scrollY == 0 && web.hasFocus()) {
+                    findViewById<Button>(R.id.home).requestFocus()
+                    return true
+                }
+            }
         }
         return super.onKeyDown(keyCode, event)
     }
@@ -330,7 +433,6 @@ class BrowserActivity : Activity() {
             return
         }
         chrome.visibility = View.VISIBLE
-        hideDownload()
         if (!resources.getBoolean(R.bool.is_television)) {
             requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
         }
@@ -341,16 +443,9 @@ class BrowserActivity : Activity() {
         fun adsOn(): Boolean = AdBlock.enabled(this@BrowserActivity)
 
         @JavascriptInterface
-        fun download(raw: String?) {
-            val url = raw.orEmpty()
-            runOnUiThread { saveVideoFile(url, CHROME_AGENT, null) }
-        }
-
-        @JavascriptInterface
         fun onVideoPlay() {
             runOnUiThread {
                 chrome.visibility = View.GONE
-                if (customView != null) showDownload()
                 if (!resources.getBoolean(R.bool.is_television)) {
                     requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
                 }
@@ -383,8 +478,48 @@ class BrowserActivity : Activity() {
               window.__xtreamIsAd = isAd;
               if (ads) {
                 window.open = function(){ return null; };
+                try {
+                  var adCss = document.createElement('style');
+                  adCss.id = 'xtream-adblock-css';
+                  adCss.textContent = `
+                    .rek, .rek_close, .rek_counter, .pppx, #adStop, [id*="adStop"],
+                    [class*="rek_"], [id*="rek_"], [class^="rek"], [id^="rek"],
+                    .ad-overlay, .ad-counter, [class*="ad-countdown"], [id*="ad-countdown"],
+                    [class*="ad-notice"], [class*="adNotice"], .jw-ad, .jw-skip,
+                    .ima-ad-container, .videoAdUi, .vjs-ad-overlay {
+                      display: none !important;
+                      visibility: hidden !important;
+                      opacity: 0 !important;
+                      pointer-events: none !important;
+                      position: absolute !important;
+                      top: -9999px !important;
+                      left: -9999px !important;
+                      width: 0 !important;
+                      height: 0 !important;
+                      z-index: -99999 !important;
+                    }
+                  `;
+                  var mountCss = function() {
+                    var r = document.head || document.documentElement;
+                    if (r && !document.getElementById('xtream-adblock-css')) r.appendChild(adCss);
+                  };
+                  mountCss();
+                  document.addEventListener('DOMContentLoaded', mountCss);
+                } catch(e) {}
               }
-              var keys = ['doubleclick','googlesyndication','googleadservices','googletagservices','popads','popcash','exoclick','exosrv','trafficjunky','juicyads','adsterra','hilltopads','clickadu','monetag','propellerads','outbrain','taboola','revcontent','adnxs','adservice','adserver','adskeeper','magsrv','realsrv','tsyndicate','trafficstars','onclickads','popunder','clickaine','galaksion','admaven','highrevenue','pagead','securepubads','fundingchoices','imasdk','gampad','pubads','fwmrm','springserve','stickyadstv','lkqd','spotx','mgid.com'];
+              var keys = [
+                'doubleclick','googlesyndication','googleadservices','googletagservices',
+                'popads','popcash','exoclick','exosrv','trafficjunky','juicyads','adsterra',
+                'hilltopads','clickadu','monetag','propellerads','outbrain','taboola','revcontent',
+                'adnxs','adservice','adserver','adskeeper','magsrv','realsrv','tsyndicate',
+                'trafficstars','onclickads','popunder','clickaine','galaksion','admaven',
+                'highrevenue','pagead','securepubads','fundingchoices','imasdk','gampad',
+                'pubads','fwmrm','springserve','stickyadstv','lkqd','spotx','mgid.com',
+                'createlouisville','bakestubborn','show-sb','show-creative','flushpersist',
+                'storageimagedisplay','spendsdetachment','interstitial','center_banner',
+                'gambling','whos.amung.us','histats','alwingulla','deloton','onclickprediction',
+                'pxf.gif','/sspi/','propush','adcash','popmyads'
+              ];
               function isAd(src){
                 if (!src) return false;
                 src = String(src).toLowerCase();
@@ -392,6 +527,23 @@ class BrowserActivity : Activity() {
                   if (src.indexOf(keys[i]) !== -1) return true;
                 }
                 return false;
+              }
+              if (ads) {
+                document.addEventListener('click', function(e){
+                  var target = e.target;
+                  while (target && target !== document.body && target !== document.documentElement) {
+                    if (target.tagName === 'A') {
+                      var href = target.href || target.getAttribute('href') || '';
+                      if (href && isAd(href)) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        target.remove();
+                        return false;
+                      }
+                    }
+                    target = target.parentElement;
+                  }
+                }, true);
               }
               function skipAd(v) {
                 if (!v || v.__xtreamHold) return !!(v && v.__xtreamHold);
@@ -459,15 +611,26 @@ class BrowserActivity : Activity() {
                     else if (v.requestFullscreen) v.requestFullscreen();
                   } catch (e) {}
                   try { Xtream.onVideoPlay(); } catch (e) {}
-                  placeDownload();
+                  injectXtreamPlayerOSD();
                 });
                 v.addEventListener('ended', function(){
                   if (window.__xtreamAds !== false && isAd(v.currentSrc || v.src || '')) return;
                   try { Xtream.onVideoEnd(); } catch (e) {}
                 });
               }
-              function placeDownload(){
-                if (!document.documentElement) return;
+              function formatClock(total){
+                if (!isFinite(total) || total < 0) return '00:00';
+                var s = Math.floor(total);
+                var h = Math.floor(s / 3600);
+                var m = Math.floor((s % 3600) / 60);
+                var sec = s % 60;
+                var ss = (sec < 10 ? '0' : '') + sec;
+                var mm = (m < 10 ? '0' : '') + m;
+                if (h > 0) return h + ':' + mm + ':' + ss;
+                return mm + ':' + ss;
+              }
+
+              function getBestVideo(){
                 var best = null;
                 var area = 0;
                 document.querySelectorAll('video').forEach(function(v){
@@ -480,32 +643,538 @@ class BrowserActivity : Activity() {
                     best = v;
                   }
                 });
-                var btn = document.getElementById('xtream-dl');
+                return best;
+              }
+
+              var osdTimer = null;
+              function showOSD(){
+                var osd = document.getElementById('xtream-player-osd');
+                if (!osd) return;
+                osd.classList.add('xt-visible');
+                clearTimeout(osdTimer);
+                osdTimer = setTimeout(function(){
+                  var modal = document.getElementById('xt-modal');
+                  if (!modal || !modal.classList.contains('xt-open')) {
+                    osd.classList.remove('xt-visible');
+                  }
+                }, 3500);
+              }
+
+              function injectXtreamPlayerOSD(){
+                var oldBtn = document.getElementById('xtream-dl');
+                if (oldBtn) oldBtn.remove();
+                if (!document.body) return;
+
+                var best = getBestVideo();
+                var osd = document.getElementById('xtream-player-osd');
                 if (!best) {
-                  if (btn) btn.style.display = 'none';
+                  if (osd) osd.style.display = 'none';
                   return;
                 }
                 window.__xtreamVideo = best;
-                if (!btn) {
-                  btn = document.createElement('button');
-                  btn.id = 'xtream-dl';
-                  btn.type = 'button';
-                  btn.textContent = 'Download';
-                  btn.style.cssText = 'position:fixed;z-index:2147483646;border:0;border-radius:14px;background:#3ecbff;color:#041018;font:700 16px sans-serif;padding:12px 18px;min-height:48px;min-width:48px;';
-                  btn.addEventListener('click', function(ev){
-                    ev.preventDefault();
-                    ev.stopPropagation();
-                    var src = '';
-                    try { src = window.__xtreamVideo.currentSrc || window.__xtreamVideo.src || ''; } catch (e) {}
-                    try { Xtream.download(src); } catch (e2) {}
-                  });
-                  document.documentElement.appendChild(btn);
+
+                if (!document.getElementById('xtream-osd-style')) {
+                  var st = document.createElement('style');
+                  st.id = 'xtream-osd-style';
+                  st.textContent = `
+                    #xtream-player-osd {
+                      position: fixed;
+                      bottom: 0;
+                      left: 0;
+                      right: 0;
+                      background: linear-gradient(0deg, rgba(2, 4, 12, 0.96) 0%, rgba(2, 4, 12, 0.75) 60%, transparent 100%);
+                      backdrop-filter: blur(12px);
+                      -webkit-backdrop-filter: blur(12px);
+                      padding: 12px 24px 16px 24px;
+                      display: flex;
+                      flex-direction: column;
+                      gap: 8px;
+                      z-index: 2147483645;
+                      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                      color: #F4F7FF;
+                      opacity: 0;
+                      pointer-events: none;
+                      transform: translateY(8px);
+                      transition: opacity 0.25s ease, transform 0.25s ease;
+                      box-sizing: border-box;
+                    }
+                    #xtream-player-osd.xt-visible {
+                      opacity: 1;
+                      pointer-events: auto;
+                      transform: translateY(0);
+                    }
+                    .xt-seek-row {
+                      display: flex;
+                      align-items: center;
+                      gap: 12px;
+                      width: 100%;
+                    }
+                    .xt-time {
+                      font-size: 13px;
+                      font-weight: 700;
+                      color: #73D8FF;
+                      min-width: 48px;
+                      font-family: monospace;
+                    }
+                    .xt-time-dur {
+                      color: #8E9BAE;
+                    }
+                    .xt-slider {
+                      flex: 1;
+                      -webkit-appearance: none;
+                      appearance: none;
+                      height: 6px;
+                      border-radius: 3px;
+                      background: rgba(255, 255, 255, 0.25);
+                      outline: none;
+                      cursor: pointer;
+                      transition: height 0.15s ease;
+                    }
+                    .xt-slider:hover, .xt-slider:focus {
+                      height: 8px;
+                      box-shadow: 0 0 10px rgba(62, 203, 255, 0.6);
+                    }
+                    .xt-slider::-webkit-slider-thumb {
+                      -webkit-appearance: none;
+                      appearance: none;
+                      width: 16px;
+                      height: 16px;
+                      border-radius: 50%;
+                      background: #3ECBFF;
+                      box-shadow: 0 0 8px rgba(62, 203, 255, 0.8);
+                      cursor: pointer;
+                    }
+                    .xt-ctrl-row {
+                      display: flex;
+                      align-items: center;
+                      justify-content: space-between;
+                      width: 100%;
+                    }
+                    .xt-group {
+                      display: flex;
+                      align-items: center;
+                      gap: 8px;
+                    }
+                    .xt-btn {
+                      background: rgba(255, 255, 255, 0.1);
+                      border: 1px solid rgba(255, 255, 255, 0.18);
+                      color: #F4F7FF;
+                      border-radius: 10px;
+                      padding: 8px 14px;
+                      font-size: 13px;
+                      font-weight: 600;
+                      cursor: pointer;
+                      display: inline-flex;
+                      align-items: center;
+                      justify-content: center;
+                      gap: 6px;
+                      transition: all 0.2s ease;
+                      outline: none;
+                      min-height: 40px;
+                    }
+                    .xt-btn:hover, .xt-btn:focus {
+                      background: #3ECBFF;
+                      color: #041018;
+                      border-color: #3ECBFF;
+                      box-shadow: 0 0 12px rgba(62, 203, 255, 0.6);
+                      transform: scale(1.03);
+                    }
+                    .xt-btn-main {
+                      background: #3ECBFF;
+                      color: #041018;
+                      border-color: #3ECBFF;
+                      font-weight: 700;
+                      font-size: 14px;
+                      padding: 8px 20px;
+                    }
+                    .xt-btn-main:hover, .xt-btn-main:focus {
+                      background: #73D8FF;
+                      box-shadow: 0 0 18px rgba(62, 203, 255, 0.85);
+                    }
+                    #xt-modal {
+                      position: fixed;
+                      bottom: 84px;
+                      right: 24px;
+                      width: 290px;
+                      background: rgba(8, 12, 26, 0.97);
+                      backdrop-filter: blur(20px);
+                      -webkit-backdrop-filter: blur(20px);
+                      border: 1px solid rgba(62, 203, 255, 0.35);
+                      border-radius: 16px;
+                      padding: 16px;
+                      display: none;
+                      flex-direction: column;
+                      gap: 12px;
+                      box-shadow: 0 16px 48px rgba(0, 0, 0, 0.9);
+                      z-index: 2147483647;
+                      color: #F4F7FF;
+                    }
+                    #xt-modal.xt-open {
+                      display: flex;
+                    }
+                    .xt-modal-head {
+                      display: flex;
+                      justify-content: space-between;
+                      align-items: center;
+                      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+                      padding-bottom: 8px;
+                    }
+                    .xt-modal-title {
+                      color: #3ECBFF;
+                      font-size: 14px;
+                      font-weight: 700;
+                    }
+                    .xt-modal-close {
+                      background: transparent;
+                      border: 0;
+                      color: #8E9BAE;
+                      font-size: 16px;
+                      cursor: pointer;
+                      padding: 2px 6px;
+                      border-radius: 6px;
+                    }
+                    .xt-modal-close:hover, .xt-modal-close:focus {
+                      color: #F4F7FF;
+                      background: rgba(255, 255, 255, 0.1);
+                    }
+                    .xt-sec-title {
+                      font-size: 11px;
+                      font-weight: 700;
+                      text-transform: uppercase;
+                      letter-spacing: 0.08em;
+                      color: #8E9BAE;
+                      margin-bottom: 4px;
+                    }
+                    .xt-pills {
+                      display: flex;
+                      flex-wrap: wrap;
+                      gap: 6px;
+                    }
+                    .xt-pill {
+                      background: rgba(255, 255, 255, 0.08);
+                      border: 1px solid rgba(255, 255, 255, 0.14);
+                      border-radius: 8px;
+                      padding: 6px 12px;
+                      font-size: 12px;
+                      font-weight: 600;
+                      color: #DDE5F0;
+                      cursor: pointer;
+                      outline: none;
+                      transition: all 0.15s ease;
+                    }
+                    .xt-pill:hover, .xt-pill:focus, .xt-pill.active {
+                      background: #3ECBFF;
+                      color: #041018;
+                      border-color: #3ECBFF;
+                      box-shadow: 0 0 10px rgba(62, 203, 255, 0.5);
+                    }
+                  `;
+                  document.head.appendChild(st);
                 }
-                var box = best.getBoundingClientRect();
-                btn.style.display = 'block';
-                var width = btn.offsetWidth || 128;
-                btn.style.left = Math.max(12, box.right - width - 16) + 'px';
-                btn.style.top = Math.max(12, box.bottom - 64) + 'px';
+
+                if (!osd) {
+                  osd = document.createElement('div');
+                  osd.id = 'xtream-player-osd';
+                  osd.innerHTML = `
+                    <div class="xt-seek-row">
+                      <span id="xt-cur" class="xt-time">00:00</span>
+                      <input type="range" id="xt-seek" class="xt-slider" min="0" max="1000" value="0" />
+                      <span id="xt-dur" class="xt-time xt-time-dur">00:00</span>
+                    </div>
+                    <div class="xt-ctrl-row">
+                      <div class="xt-group">
+                        <button id="xt-rw" class="xt-btn" title="Rewind 10s">↺ 10s</button>
+                        <button id="xt-play" class="xt-btn xt-btn-main" title="Play/Pause">⏸ Pause</button>
+                        <button id="xt-ff" class="xt-btn" title="Forward 10s">10s ↻</button>
+                        <button id="xt-next" class="xt-btn" title="Next Episode / Server">⏭ Next</button>
+                      </div>
+                      <div class="xt-group">
+                        <button id="xt-fs" class="xt-btn" title="Fullscreen">⛶ Fullscreen</button>
+                        <button id="xt-opt" class="xt-btn" title="Settings / Options">⚙️ Options</button>
+                      </div>
+                    </div>
+                  `;
+                  document.documentElement.appendChild(osd);
+
+                  var modal = document.createElement('div');
+                  modal.id = 'xt-modal';
+                  modal.innerHTML = `
+                    <div class="xt-modal-head">
+                      <span class="xt-modal-title">⚙️ Player Options &amp; Quality</span>
+                      <button id="xt-close-modal" class="xt-modal-close">✕</button>
+                    </div>
+                    <div>
+                      <div class="xt-sec-title">Video Quality:</div>
+                      <div class="xt-pills" id="xt-q-pills">
+                        <button class="xt-pill active" data-q="auto">Auto</button>
+                        <button class="xt-pill" data-q="1080">1080p</button>
+                        <button class="xt-pill" data-q="720">720p</button>
+                        <button class="xt-pill" data-q="480">480p</button>
+                        <button class="xt-pill" data-q="360">360p</button>
+                      </div>
+                    </div>
+                    <div>
+                      <div class="xt-sec-title">Playback Speed:</div>
+                      <div class="xt-pills" id="xt-spd-pills">
+                        <button class="xt-pill" data-spd="0.75">0.75x</button>
+                        <button class="xt-pill active" data-spd="1.0">1.0x</button>
+                        <button class="xt-pill" data-spd="1.25">1.25x</button>
+                        <button class="xt-pill" data-spd="1.5">1.5x</button>
+                        <button class="xt-pill" data-spd="2.0">2.0x</button>
+                      </div>
+                    </div>
+                    <div>
+                      <div class="xt-sec-title">Aspect Fit:</div>
+                      <div class="xt-pills" id="xt-fit-pills">
+                        <button class="xt-pill active" data-fit="contain">Fit</button>
+                        <button class="xt-pill" data-fit="cover">Fill</button>
+                        <button class="xt-pill" data-fit="fill">Stretch</button>
+                      </div>
+                    </div>
+                  `;
+                  document.documentElement.appendChild(modal);
+
+                  var playBtn = document.getElementById('xt-play');
+                  var rwBtn = document.getElementById('xt-rw');
+                  var ffBtn = document.getElementById('xt-ff');
+                  var nextBtn = document.getElementById('xt-next');
+                  var fsBtn = document.getElementById('xt-fs');
+                  var optBtn = document.getElementById('xt-opt');
+                  var seek = document.getElementById('xt-seek');
+                  var closeBtn = document.getElementById('xt-close-modal');
+
+                  window.__xtreamTogglePlay = function(){
+                    var v = window.__xtreamVideo || getBestVideo();
+                    if (v) {
+                      if (v.paused) v.play(); else v.pause();
+                      showOSD();
+                    }
+                    document.querySelectorAll('iframe').forEach(function(f){
+                      try { f.contentWindow.postMessage('xtream-toggle-play', '*'); } catch(e){}
+                    });
+                  };
+
+                  window.__xtreamNudge = function(delta){
+                    var v = window.__xtreamVideo || getBestVideo();
+                    if (v) {
+                      var cur = v.currentTime || 0;
+                      var dur = v.duration || 999999;
+                      v.currentTime = Math.min(dur, Math.max(0, cur + delta));
+                      showOSD();
+                    }
+                    document.querySelectorAll('iframe').forEach(function(f){
+                      try { f.contentWindow.postMessage({action:'xtream-nudge', delta:delta}, '*'); } catch(e){}
+                    });
+                  };
+
+                  window.__xtreamNext = function(){
+                    var servers = Array.from(document.querySelectorAll('[data-server], .server, .btn-server, a[href*="server"], .episode, .next-episode'));
+                    var clicked = false;
+                    for (var i = 0; i < servers.length; i++) {
+                      var txt = (servers[i].textContent || '').toLowerCase();
+                      if (!servers[i].classList.contains('active') && (txt.includes('server') || txt.includes('next') || txt.includes('part') || txt.includes('episode'))) {
+                        servers[i].click();
+                        clicked = true;
+                        break;
+                      }
+                    }
+                    if (!clicked) {
+                      window.__xtreamNudge(60);
+                    }
+                    document.querySelectorAll('iframe').forEach(function(f){
+                      try { f.contentWindow.postMessage('xtream-next', '*'); } catch(e){}
+                    });
+                    showOSD();
+                  };
+
+                  window.__xtreamToggleOptions = function(){
+                    if (modal) {
+                      modal.classList.toggle('xt-open');
+                      showOSD();
+                    }
+                    document.querySelectorAll('iframe').forEach(function(f){
+                      try { f.contentWindow.postMessage('xtream-toggle-options', '*'); } catch(e){}
+                    });
+                  };
+
+                  window.__xtreamSetQuality = function(q){
+                    try {
+                      if (window.jwplayer) {
+                        var jw = window.jwplayer();
+                        var qualities = jw.getQualityLevels ? jw.getQualityLevels() : [];
+                        for (var qi = 0; qi < qualities.length; qi++) {
+                          if (q === 'auto' && (qualities[qi].label || '').toLowerCase().includes('auto')) {
+                            jw.setCurrentQuality(qi); break;
+                          } else if ((qualities[qi].label || '').includes(q)) {
+                            jw.setCurrentQuality(qi); break;
+                          }
+                        }
+                      }
+                    } catch(e1) {}
+                    try {
+                      var qBtns = document.querySelectorAll('[data-quality], .quality-btn, .quality');
+                      qBtns.forEach(function(qb){
+                        if ((qb.textContent || '').includes(q)) qb.click();
+                      });
+                    } catch(e2) {}
+                    document.querySelectorAll('iframe').forEach(function(f){
+                      try { f.contentWindow.postMessage({action:'xtream-set-quality', quality:q}, '*'); } catch(e){}
+                    });
+                    showOSD();
+                  };
+
+                  window.addEventListener('message', function(ev){
+                    if (!ev || !ev.data) return;
+                    if (ev.data === 'xtream-toggle-play') {
+                      var v = window.__xtreamVideo || getBestVideo();
+                      if (v) { if (v.paused) v.play(); else v.pause(); showOSD(); }
+                    } else if (ev.data === 'xtream-toggle-options') {
+                      if (modal) { modal.classList.toggle('xt-open'); showOSD(); }
+                    } else if (ev.data === 'xtream-next') {
+                      window.__xtreamNext();
+                    } else if (ev.data && ev.data.action === 'xtream-nudge') {
+                      var v2 = window.__xtreamVideo || getBestVideo();
+                      if (v2) {
+                        var cur2 = v2.currentTime || 0;
+                        var dur2 = v2.duration || 999999;
+                        v2.currentTime = Math.min(dur2, Math.max(0, cur2 + ev.data.delta));
+                        showOSD();
+                      }
+                    } else if (ev.data && ev.data.action === 'xtream-set-quality') {
+                      window.__xtreamSetQuality(ev.data.quality);
+                    }
+                  });
+
+                  playBtn.addEventListener('click', function(e){
+                    e.preventDefault();
+                    e.stopPropagation();
+                    window.__xtreamTogglePlay();
+                  });
+
+                  rwBtn.addEventListener('click', function(e){
+                    e.preventDefault();
+                    e.stopPropagation();
+                    window.__xtreamNudge(-10);
+                  });
+
+                  ffBtn.addEventListener('click', function(e){
+                    e.preventDefault();
+                    e.stopPropagation();
+                    window.__xtreamNudge(10);
+                  });
+
+                  nextBtn.addEventListener('click', function(e){
+                    e.preventDefault();
+                    e.stopPropagation();
+                    window.__xtreamNext();
+                  });
+
+                  fsBtn.addEventListener('click', function(e){
+                    e.preventDefault();
+                    e.stopPropagation();
+                    var v = window.__xtreamVideo;
+                    if (!v) return;
+                    try {
+                      if (v.webkitEnterFullscreen) v.webkitEnterFullscreen();
+                      else if (v.requestFullscreen) v.requestFullscreen();
+                      else if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen();
+                    } catch(err) {}
+                    showOSD();
+                  });
+
+                  optBtn.addEventListener('click', function(e){
+                    e.preventDefault();
+                    e.stopPropagation();
+                    window.__xtreamToggleOptions();
+                  });
+
+                  closeBtn.addEventListener('click', function(e){
+                    e.preventDefault();
+                    e.stopPropagation();
+                    modal.classList.remove('xt-open');
+                  });
+
+                  seek.addEventListener('input', function(){
+                    var v = window.__xtreamVideo;
+                    if (!v || !v.duration) return;
+                    v.currentTime = (seek.value / 1000) * v.duration;
+                    showOSD();
+                  });
+
+                  document.querySelectorAll('#xt-q-pills .xt-pill').forEach(function(pill){
+                    pill.addEventListener('click', function(e){
+                      e.preventDefault();
+                      e.stopPropagation();
+                      document.querySelectorAll('#xt-q-pills .xt-pill').forEach(function(p){ p.classList.remove('active'); });
+                      pill.classList.add('active');
+                      var q = pill.getAttribute('data-q');
+                      try {
+                        if (window.jwplayer) {
+                          var jw = window.jwplayer();
+                          var qualities = jw.getQualityLevels ? jw.getQualityLevels() : [];
+                          for (var qi = 0; qi < qualities.length; qi++) {
+                            if (q === 'auto' && (qualities[qi].label || '').toLowerCase().includes('auto')) {
+                              jw.setCurrentQuality(qi); break;
+                            } else if ((qualities[qi].label || '').includes(q)) {
+                              jw.setCurrentQuality(qi); break;
+                            }
+                          }
+                        }
+                      } catch(e1) {}
+                      try {
+                        var qBtns = document.querySelectorAll('[data-quality], .quality-btn, .quality');
+                        qBtns.forEach(function(qb){
+                          if ((qb.textContent || '').includes(q)) qb.click();
+                        });
+                      } catch(e2) {}
+                      showOSD();
+                    });
+                  });
+
+                  document.querySelectorAll('#xt-spd-pills .xt-pill').forEach(function(pill){
+                    pill.addEventListener('click', function(e){
+                      e.preventDefault();
+                      e.stopPropagation();
+                      document.querySelectorAll('#xt-spd-pills .xt-pill').forEach(function(p){ p.classList.remove('active'); });
+                      pill.classList.add('active');
+                      var spd = parseFloat(pill.getAttribute('data-spd')) || 1.0;
+                      if (window.__xtreamVideo) window.__xtreamVideo.playbackRate = spd;
+                      showOSD();
+                    });
+                  });
+
+                  document.querySelectorAll('#xt-fit-pills .xt-pill').forEach(function(pill){
+                    pill.addEventListener('click', function(e){
+                      e.preventDefault();
+                      e.stopPropagation();
+                      document.querySelectorAll('#xt-fit-pills .xt-pill').forEach(function(p){ p.classList.remove('active'); });
+                      pill.classList.add('active');
+                      var fit = pill.getAttribute('data-fit') || 'contain';
+                      if (window.__xtreamVideo) window.__xtreamVideo.style.objectFit = fit;
+                      showOSD();
+                    });
+                  });
+
+                  ['mousemove', 'pointerdown', 'touchstart', 'keydown'].forEach(function(evt){
+                    document.addEventListener(evt, showOSD, {passive: true});
+                  });
+                }
+
+                osd.style.display = 'flex';
+
+                var curSpan = document.getElementById('xt-cur');
+                var durSpan = document.getElementById('xt-dur');
+                var seekInput = document.getElementById('xt-seek');
+                var playButton = document.getElementById('xt-play');
+
+                if (curSpan) curSpan.textContent = formatClock(best.currentTime || 0);
+                if (durSpan) durSpan.textContent = formatClock(best.duration || 0);
+                if (seekInput && best.duration) {
+                  seekInput.value = Math.floor(((best.currentTime || 0) / best.duration) * 1000);
+                }
+                if (playButton) {
+                  playButton.textContent = best.paused ? '▶ Play' : '⏸ Pause';
+                }
               }
               function scan(){
                 if (!document.body) return;
@@ -532,7 +1201,79 @@ class BrowserActivity : Activity() {
                   var src = node.src || node.getAttribute('src') || '';
                   if (isAd(src)) node.remove();
                 });
+                var badSelectors = [
+                  '.ima-ad-container', '.videoAdUi', '.jw-ad', '.jw-skip', '.vjs-ad-overlay',
+                  '[class*="ad-container"]', '[id*="ad-container"]', '[class*="adContainer"]',
+                  '[id*="ad-banner"]', '[class*="ad-banner"]', '[id*="banner-ad"]', '[class*="banner-ad"]',
+                  '[id*="interstitial"]', '[class*="interstitial"]', '[id*="center_banner"]', '[class*="center_banner"]',
+                  '[class*="popunder"]', '[id*="popunder"]', '[class*="floating-banner"]',
+                  '.rek', '.rek_close', '.rek_counter', '.pppx', '#adStop', '[id*="adStop"]',
+                  '[class*="rek"]', '[id*="rek"]', '.ad-overlay', '.ad-counter',
+                  '[class*="ad-countdown"]', '[id*="ad-countdown"]', '[class*="countdown"]',
+                  '[class*="ad-notice"]', '[id*="ad-notice"]', '[class*="ad_overlay"]'
+                ];
+                badSelectors.forEach(function(sel){
+                  try {
+                    document.querySelectorAll(sel).forEach(function(el){
+                      if (el.closest && el.closest('video')) return;
+                      var v = el.querySelector ? el.querySelector('video') : null;
+                      if (!v) el.remove();
+                    });
+                  } catch(e) {}
+                });
+                try {
+                  var vw = window.innerWidth || 1920;
+                  var vh = window.innerHeight || 1080;
+                  document.querySelectorAll('div, a, section').forEach(function(el){
+                    if (el.id === 'xtream-dl' || el.tagName === 'VIDEO') return;
+                    if (el.querySelector && el.querySelector('video')) return;
+                    var style = window.getComputedStyle(el);
+                    if (!style) return;
+                    if (style.position === 'fixed' || style.position === 'absolute') {
+                      var z = parseInt(style.zIndex, 10);
+                      var op = parseFloat(style.opacity);
+                      var box = el.getBoundingClientRect();
+                      if (box.width >= vw * 0.75 && box.height >= vh * 0.75) {
+                        if (op < 0.1 || style.visibility === 'hidden' || z > 500) {
+                          if (!el.querySelector('h1, h2, h3, p, main, article, input, form')) {
+                            el.remove();
+                          }
+                        }
+                      }
+                    }
+                  });
+                } catch(e2) {}
                 hidePlayerAds();
+              }
+              function purgeAdTextOverlays(){
+                if (window.__xtreamAds === false || !document.body) return;
+                try {
+                  var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
+                  var node;
+                  var toRemove = [];
+                  while (node = walker.nextNode()) {
+                    var txt = (node.nodeValue || '').trim().toLowerCase();
+                    if (txt && (txt.includes('closed in') || txt.includes('will be closed') || txt.includes('close in') || txt.includes('ads will') || txt.includes('skip ad in') || txt.includes('seconds remaining'))) {
+                      var parent = node.parentElement;
+                      if (parent && parent.tagName !== 'BODY' && parent.tagName !== 'HTML') {
+                        var box = parent.closest ? parent.closest('.rek, [class*="rek"], div, section') : parent;
+                        if (box && !box.querySelector('video') && box.tagName !== 'BODY' && box.tagName !== 'HTML') {
+                          toRemove.push(box);
+                        } else if (parent && !parent.querySelector('video') && parent.tagName !== 'BODY' && parent.tagName !== 'HTML') {
+                          toRemove.push(parent);
+                        }
+                      }
+                    }
+                  }
+                  toRemove.forEach(function(el){ try { el.remove(); } catch(e){} });
+                } catch(e) {}
+                try {
+                  var pbo = document.querySelector('.play-button-outer');
+                  if (pbo) {
+                    var rek = document.querySelector('.rek, .rek_counter, .rek_close, .pppx');
+                    if (rek) rek.remove();
+                  }
+                } catch(e) {}
               }
               window.__xtreamHide = hideAds;
               window.__xtreamAdCount = function(){
@@ -548,30 +1289,15 @@ class BrowserActivity : Activity() {
               function boot(){
                 scan();
                 hideAds();
+                purgeAdTextOverlays();
                 if (!document.documentElement || window.__xtreamObs) return;
-                window.__xtreamObs = new MutationObserver(function(){ scan(); hideAds(); });
+                window.__xtreamObs = new MutationObserver(function(){ scan(); hideAds(); purgeAdTextOverlays(); });
                 window.__xtreamObs.observe(document.documentElement, {childList:true, subtree:true});
               }
               boot();
               document.addEventListener('DOMContentLoaded', boot);
-              setInterval(function(){ scan(); hideAds(); placeDownload(); }, 1000);
+              setInterval(function(){ scan(); hideAds(); purgeAdTextOverlays(); injectXtreamPlayerOSD(); }, 800);
             })();
-        """
-        private const val CURRENT_SRC = """
-            (function(){
-              var best = '';
-              var area = 0;
-              var list = document.querySelectorAll('video');
-              for (var i = 0; i < list.length; i++) {
-                var v = list[i];
-                var src = v.currentSrc || v.src || '';
-                if (!src) continue;
-                var box = v.getBoundingClientRect();
-                var size = box.width * box.height;
-                if (size >= area) { area = size; best = src; }
-              }
-              return best;
-            })()
         """
     }
 }

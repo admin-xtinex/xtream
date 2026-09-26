@@ -18,7 +18,16 @@ class MainActivity : Activity() {
         val notice = findViewById<TextView>(R.id.notice)
         val go = findViewById<Button>(R.id.go)
         findViewById<Button>(R.id.bookmarks).setOnClickListener {
-            startActivity(Intent(this, BookmarksActivity::class.java))
+            startActivity(
+                Intent(this, BookmarksActivity::class.java)
+                    .putExtra(BookmarksActivity.EXTRA_MODE, BookmarksActivity.MODE_BOOKMARKS)
+            )
+        }
+        findViewById<Button>(R.id.history).setOnClickListener {
+            startActivity(
+                Intent(this, BookmarksActivity::class.java)
+                    .putExtra(BookmarksActivity.EXTRA_MODE, BookmarksActivity.MODE_HISTORY)
+            )
         }
         val submit = {
             val url = Urls.resolve(address.text.toString())
@@ -42,9 +51,12 @@ class MainActivity : Activity() {
         val shortcuts = findViewById<LinearLayout>(R.id.shortcuts)
         val links = Suggested.load(this).ifEmpty {
             listOf(
+                Entry("https://www.youtube.com", "YouTube"),
                 Entry("https://www.wikipedia.org", "Wikipedia"),
                 Entry("https://archive.org", "Internet Archive"),
                 Entry("https://www.nasa.gov", "NASA"),
+                Entry("https://www.twitch.tv", "Twitch"),
+                Entry("https://www.reddit.com", "Reddit"),
             )
         }
         links.forEach { entry ->
@@ -71,18 +83,20 @@ class MainActivity : Activity() {
     }
 
     private fun tile(label: String, onClick: () -> Unit): Button {
+        val minW = resources.getDimensionPixelSize(R.dimen.tile_min_width)
+        val minH = resources.getDimensionPixelSize(R.dimen.tile_min_height)
         return Button(this).apply {
             text = label
-            textSize = 18f
+            textSize = 16f
             isAllCaps = false
             setTextColor(0xFFF4F7FF.toInt())
             setBackgroundResource(R.drawable.bg_tile)
-            minHeight = dp(72)
-            minWidth = dp(180)
+            minHeight = minH
+            minWidth = minW
             gravity = Gravity.START or Gravity.CENTER_VERTICAL
-            setPadding(dp(18), dp(12), dp(18), dp(12))
+            setPadding(dp(16), dp(10), dp(16), dp(10))
             val gap = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-            gap.marginEnd = dp(12)
+            gap.marginEnd = dp(10)
             layoutParams = gap
             setOnClickListener { onClick() }
         }

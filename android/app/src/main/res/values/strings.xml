@@ -2,22 +2,22 @@
 <resources>
     <string name="app_name">Xtream</string>
     <string name="address_hint">Search or enter an address</string>
-    <string name="go">Go</string>
-    <string name="bookmarks">Bookmarks</string>
+    <string name="go">Go ➔</string>
+    <string name="bookmarks">★ Bookmarks</string>
     <string name="open">Suggested</string>
     <string name="recent">Recent</string>
-    <string name="home">Home</string>
-    <string name="rotate">Rotate</string>
-    <string name="save">Save</string>
-    <string name="video">Video</string>
-    <string name="download">Download</string>
-    <string name="saving">Saving %1$s</string>
-    <string name="not_video">Only a video file can be saved. Other formats stay blocked.</string>
-    <string name="blocking">Blocking</string>
+    <string name="home">⌂ Home</string>
+    <string name="rotate">↻ Rotate</string>
+    <string name="save">☆ Bookmark</string>
+    <string name="video">⚙️ Options</string>
+    <string name="blocking">🛡️ Blocking</string>
     <string name="ads">Ads</string>
-    <string name="saved">Saved</string>
+    <string name="saved">★ Saved</string>
     <string name="remove">Remove</string>
-    <string name="empty_bookmarks">No bookmarks yet. Open a page and press Save.</string>
+    <string name="empty_bookmarks">No bookmarks yet. Open a page and press Bookmark.</string>
     <string name="bad_address">Enter a public web address or a search.</string>
     <string name="loading">Loading</string>
+    <string name="history">🕒 History</string>
+    <string name="clear_history">Clear History</string>
+    <string name="empty_history">No history yet. Pages you visit will appear here.</string>
 </resources>

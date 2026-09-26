@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <dimen name="screen_padding">36dp</dimen>
+    <dimen name="logo_width">280dp</dimen>
+    <dimen name="logo_height">140dp</dimen>
+    <dimen name="tile_min_width">180dp</dimen>
+    <dimen name="tile_min_height">72dp</dimen>
+    <dimen name="input_min_height">64dp</dimen>
+    <dimen name="action_btn_min_height">56dp</dimen>
+</resources>
