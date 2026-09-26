@@ -218,7 +218,7 @@ class BrowserActivity : Activity() {
         web.requestFocus()
     }
 
-    private val gateTick = Runnable {
+    private val gateTick: Runnable = Runnable {
         if (!gateRunning) return@Runnable
         if (gateLeft <= 0) {
             verifyGate(gateToken)
