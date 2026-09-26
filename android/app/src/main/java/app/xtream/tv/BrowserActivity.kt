@@ -48,6 +48,10 @@ class BrowserActivity : Activity() {
     private var isVideoFullscreen: Boolean = false
     // TV two-column navigation: tracks whether D-pad is scrolling the right sidebar
     private var inSidebar: Boolean = false
+    // TV cursor mode: D-pad moves a pointer, OK clicks it
+    private var cursorMode: Boolean = false
+    private var cursorX: Float = 0f
+    private var cursorY: Float = 0f
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -99,6 +103,22 @@ class BrowserActivity : Activity() {
         }
         web.isLongClickable = false
         web.setOnLongClickListener { true }
+        // Intercept D-pad keys on the WebView before WebView's own focus traversal
+        // handles them. Without this, when a link/button inside WebView has focus,
+        // DPAD events never reach onKeyDown.
+        web.setOnKeyListener { _, keyCode, event ->
+            if (event.action == KeyEvent.ACTION_DOWN) {
+                when (keyCode) {
+                    KeyEvent.KEYCODE_DPAD_UP,
+                    KeyEvent.KEYCODE_DPAD_DOWN,
+                    KeyEvent.KEYCODE_DPAD_LEFT,
+                    KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                        onKeyDown(keyCode, event)
+                    }
+                    else -> false
+                }
+            } else false
+        }
         val cookies = android.webkit.CookieManager.getInstance()
         cookies.setAcceptCookie(true)
         cookies.setAcceptThirdPartyCookies(web, true)
@@ -436,10 +456,42 @@ class BrowserActivity : Activity() {
                 return true
             }
             KeyEvent.KEYCODE_MENU -> {
-                showPlayerOptionsMenu()
+                if (isVideoFullscreen || customView != null) {
+                    showPlayerOptionsMenu()
+                } else {
+                    // Toggle between remote-scroll mode and cursor-pointer mode
+                    cursorMode = !cursorMode
+                    if (cursorMode) {
+                        cursorX = web.width / 2f
+                        cursorY = web.height / 2f
+                        inSidebar = false
+                        web.evaluateJavascript(
+                            "window.__xtreamShowCursor && window.__xtreamShowCursor($cursorX,$cursorY)", null
+                        )
+                    } else {
+                        web.evaluateJavascript(
+                            "window.__xtreamHideCursor && window.__xtreamHideCursor()", null
+                        )
+                    }
+                }
                 return true
             }
+            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
+                if (cursorMode) {
+                    web.evaluateJavascript(
+                        "window.__xtreamClickAt && window.__xtreamClickAt($cursorX,$cursorY)", null
+                    )
+                    return true
+                }
+            }
             KeyEvent.KEYCODE_DPAD_UP -> {
+                if (cursorMode) {
+                    cursorY = maxOf(0f, cursorY - 80f)
+                    web.evaluateJavascript(
+                        "window.__xtreamShowCursor && window.__xtreamShowCursor($cursorX,$cursorY)", null
+                    )
+                    return true
+                }
                 if (chrome.visibility != View.VISIBLE) {
                     // Show nav bar when hidden (e.g. video OSD mode)
                     chrome.visibility = View.VISIBLE
@@ -471,6 +523,13 @@ class BrowserActivity : Activity() {
                 }
             }
             KeyEvent.KEYCODE_DPAD_DOWN -> {
+                if (cursorMode) {
+                    cursorY = minOf(web.height.toFloat(), cursorY + 80f)
+                    web.evaluateJavascript(
+                        "window.__xtreamShowCursor && window.__xtreamShowCursor($cursorX,$cursorY)", null
+                    )
+                    return true
+                }
                 // Scroll the active column down — breaks iframe focus trap
                 val sidebarJs = """
                     (function(){
@@ -489,6 +548,13 @@ class BrowserActivity : Activity() {
                 return true
             }
             KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                if (cursorMode) {
+                    cursorX = minOf(web.width.toFloat(), cursorX + 80f)
+                    web.evaluateJavascript(
+                        "window.__xtreamShowCursor && window.__xtreamShowCursor($cursorX,$cursorY)", null
+                    )
+                    return true
+                }
                 // Switch focus to right sidebar (Genres / Most Viewed)
                 if (!inSidebar) {
                     inSidebar = true
@@ -513,6 +579,13 @@ class BrowserActivity : Activity() {
                 }
             }
             KeyEvent.KEYCODE_DPAD_LEFT -> {
+                if (cursorMode) {
+                    cursorX = maxOf(0f, cursorX - 80f)
+                    web.evaluateJavascript(
+                        "window.__xtreamShowCursor && window.__xtreamShowCursor($cursorX,$cursorY)", null
+                    )
+                    return true
+                }
                 // Switch focus back to main content column
                 if (inSidebar) {
                     inSidebar = false
@@ -724,6 +797,38 @@ class BrowserActivity : Activity() {
             (function(){
               if (window.__xtreamHook) return;
               window.__xtreamHook = true;
+              // --- Cursor mode helpers ---
+              window.__xtreamShowCursor = function(x, y) {
+                var c = document.getElementById('__xtream_cur');
+                if (!c) {
+                  c = document.createElement('div');
+                  c.id = '__xtream_cur';
+                  c.style.cssText = 'position:fixed;width:26px;height:26px;border-radius:50%;' +
+                    'background:rgba(255,120,0,0.85);border:3px solid #fff;z-index:2147483647;' +
+                    'pointer-events:none;transform:translate(-50%,-50%);' +
+                    'box-shadow:0 0 10px rgba(0,0,0,0.6),0 0 0 2px rgba(255,120,0,0.4);' +
+                    'transition:left 0.06s ease,top 0.06s ease;';
+                  document.body.appendChild(c);
+                }
+                c.style.left = x + 'px';
+                c.style.top = y + 'px';
+                c.style.display = 'block';
+              };
+              window.__xtreamHideCursor = function() {
+                var c = document.getElementById('__xtream_cur');
+                if (c) c.style.display = 'none';
+              };
+              window.__xtreamClickAt = function(x, y) {
+                var c = document.getElementById('__xtream_cur');
+                if (c) { c.style.display = 'none'; }
+                var el = document.elementFromPoint(x, y);
+                if (c) { c.style.display = 'block'; }
+                if (!el) return;
+                // Try clicking the element and its closest interactive ancestor
+                var target = el.closest('a,button,input,select,textarea,[onclick],[role="button"]') || el;
+                target.click();
+                target.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,clientX:x,clientY:y}));
+              };
               var ads = true;
               try { ads = Xtream.adsOn(); } catch (e) {}
               window.__xtreamAds = ads;
