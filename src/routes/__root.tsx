@@ -13,7 +13,7 @@ export const Route = createRootRoute({
       { title: APP_NAME },
       {
         name: "description",
-        content: "Xtream is a living-room browser for search, bookmarks, and fullscreen web video.",
+        content: "Xtream is a phone browser for search, bookmarks, and web video.",
       },
       { name: "theme-color", content: "#050714" },
     ],

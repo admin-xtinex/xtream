@@ -254,7 +254,7 @@ export function XtreamApp() {
   let body: ReactNode;
   if (asleep) {
     body = (
-      <div className="grid h-dvh place-items-center bg-bg-deep px-6 text-center">
+      <div className="grid h-full place-items-center bg-bg-deep px-6 text-center">
         <TvButton
           primary
           onClick={() => setAsleep(false)}
@@ -267,7 +267,7 @@ export function XtreamApp() {
     );
   } else if (confirmExit) {
     body = (
-      <div className="grid h-dvh place-items-center bg-bg px-6">
+      <div className="grid h-full place-items-center bg-bg px-6">
         <div className="w-full max-w-lg text-center" role="dialog" aria-modal="true" aria-label="Exit Xtream">
           <h1 className="font-display text-4xl text-fg">Turn off Xtream?</h1>
           <p className="mt-3 text-base text-muted">Bookmarks and history stay on this device.</p>
@@ -325,15 +325,8 @@ export function XtreamApp() {
       <HomeScreen
         engineName={engineLabel(settings.searchEngine)}
         history={history}
-        onEdit={() => {
-          setNotice(null);
-          setOverlay({ target: "query", draft: "" });
-        }}
         onOpen={openAddress}
         onBookmarks={() => setStack((s) => [...s, { id: "bookmarks" }])}
-        onHistory={() => setStack((s) => [...s, { id: "history" }])}
-        onSettings={() => setStack((s) => [...s, { id: "settings" }])}
-        onExit={() => setConfirmExit(true)}
       />
     );
   } else if (top.id === "results") {
@@ -439,8 +432,10 @@ export function XtreamApp() {
   }
 
   return (
-    <div id="focus-root" className="h-dvh bg-bg text-fg">
-      {body}
+    <div className="phone-stage">
+      <div id="focus-root" className="phone-shell text-fg">
+        {body}
+      </div>
     </div>
   );
 }

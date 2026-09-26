@@ -6,10 +6,9 @@ import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.net.Uri
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.view.KeyEvent
 import android.view.View
+import android.view.animation.AnimationUtils
 import android.view.ViewGroup
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
@@ -27,11 +26,7 @@ class BrowserActivity : Activity() {
     private lateinit var web: WebView
     private lateinit var chrome: View
     private lateinit var gate: View
-    private lateinit var gateCount: TextView
-    private val gateHandler = Handler(Looper.getMainLooper())
-    private var gateRunning = false
-    private var gateLeft = 0
-    private var gateToken = 0
+    private lateinit var loadRing: View
     private lateinit var titleView: TextView
     private lateinit var save: Button
     private var customView: View? = null
@@ -49,7 +44,7 @@ class BrowserActivity : Activity() {
         web = findViewById(R.id.web)
         chrome = findViewById(R.id.chrome)
         gate = findViewById(R.id.gate)
-        gateCount = findViewById(R.id.gate_count)
+        loadRing = findViewById(R.id.load_ring)
         titleView = findViewById(R.id.page_title)
         save = findViewById(R.id.save)
         val block = findViewById<Button>(R.id.block)
@@ -164,10 +159,11 @@ class BrowserActivity : Activity() {
                     return
                 }
                 view.evaluateJavascript(PAGE_HOOK, null)
-                if (AdBlock.enabled(this@BrowserActivity)) armGate() else clearGate()
+                showLoad()
             }
 
             override fun onPageFinished(view: WebView, url: String) {
+                hideLoad()
                 val title = view.title?.ifBlank { url } ?: url
                 titleView.text = title
                 Library.visit(this@BrowserActivity, url, title)
@@ -218,48 +214,16 @@ class BrowserActivity : Activity() {
         web.requestFocus()
     }
 
-    private val gateTick: Runnable = Runnable {
-        if (!gateRunning) return@Runnable
-        if (gateLeft <= 0) {
-            verifyGate(gateToken)
-            return@Runnable
-        }
-        gateCount.text = gateLeft.toString()
-        gateLeft -= 1
-        gateHandler.postDelayed(gateTick, 1000)
-    }
-
-    private fun armGate() {
-        gateToken += 1
-        val token = gateToken
-        gateRunning = true
-        gateLeft = 5
+    private fun showLoad() {
         gate.visibility = View.VISIBLE
-        gateCount.text = "5"
-        gateHandler.removeCallbacks(gateTick)
-        gateHandler.post(gateTick)
-        gateHandler.postDelayed({
-            if (token == gateToken && gate.visibility == View.VISIBLE) verifyGate(token)
-        }, 7000)
+        loadRing.startAnimation(AnimationUtils.loadAnimation(this, R.anim.spin))
     }
 
-    private fun clearGate() {
-        gateRunning = false
-        gateHandler.removeCallbacks(gateTick)
+    private fun hideLoad() {
+        loadRing.clearAnimation()
         if (::gate.isInitialized) {
             gate.visibility = View.GONE
             if (::web.isInitialized) web.requestFocus()
-        }
-    }
-
-    private fun verifyGate(token: Int) {
-        if (token != gateToken || !gateRunning) return
-        gateRunning = false
-        gateHandler.removeCallbacks(gateTick)
-        gateCount.text = getString(R.string.gate_wait)
-        web.evaluateJavascript(VERIFY_ADS) {
-            if (token != gateToken) return@evaluateJavascript
-            clearGate()
         }
     }
 
@@ -380,7 +344,6 @@ class BrowserActivity : Activity() {
     }
 
     override fun onDestroy() {
-        gateHandler.removeCallbacksAndMessages(null)
         web.stopLoading()
         web.destroy()
         super.onDestroy()
@@ -531,15 +494,6 @@ class BrowserActivity : Activity() {
               document.addEventListener('DOMContentLoaded', boot);
               setInterval(function(){ scan(); hideAds(); }, 1000);
             })();
-        """
-        private const val VERIFY_ADS = """
-            (function(){
-              if (window.__xtreamHide) window.__xtreamHide();
-              var left = window.__xtreamAdCount ? window.__xtreamAdCount() : 0;
-              if (left && window.__xtreamHide) window.__xtreamHide();
-              left = window.__xtreamAdCount ? window.__xtreamAdCount() : 0;
-              return String(left);
-            })()
         """
     }
 }

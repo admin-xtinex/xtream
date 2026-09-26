@@ -163,7 +163,7 @@ export function Player({
           ? "This browser cannot play that HLS stream."
           : "This video cannot be played on this device.";
     return (
-      <div className="flex h-dvh flex-col items-center justify-center gap-6 bg-bg-deep px-6 text-center">
+      <div className="flex h-full flex-col items-center justify-center gap-6 bg-bg-deep px-6 text-center">
         <p className="text-sm font-semibold tracking-widest text-amber uppercase">Video</p>
         <h1 className="max-w-xl font-display text-4xl text-fg">{message}</h1>
         <p className="max-w-md text-base text-muted">
@@ -185,7 +185,7 @@ export function Player({
   return (
     <div
       id={chromeOn ? undefined : "player-chrome-hidden"}
-      className="relative h-dvh bg-bg-deep"
+      className="relative h-full bg-bg-deep"
     >
       <video
         ref={videoRef}

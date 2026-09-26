@@ -39,7 +39,7 @@ export function Screen({
   footer?: ReactNode;
 }) {
   return (
-    <div className="flex h-dvh flex-col bg-bg text-fg">
+    <div className="flex h-full flex-col bg-bg text-fg">
       <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
       {footer ? <div className="shrink-0 border-t border-line px-5 py-3 md:px-10">{footer}</div> : null}
     </div>

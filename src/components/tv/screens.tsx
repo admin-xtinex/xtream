@@ -1,14 +1,9 @@
 import { useEffect, useState } from "react";
 import { clsx } from "clsx";
 import {
-  Clock3,
-  Globe,
   House,
   Monitor,
-  Power,
   RotateCw,
-  Search,
-  Settings,
   Star,
   Tv,
 } from "lucide-react";
@@ -17,161 +12,116 @@ import type { HistoryEntry, Settings as SettingsModel } from "@/lib/tv/store";
 import { APP_VERSION, type InspectResult, type SearchHit } from "@/lib/tv/types";
 import {
   engineLabel,
-  FILMS,
   hostOf,
+  isSafeClientUrl,
+  resolveInput,
   searchPageUrl,
-  STARTER_PAGES,
   titleFromUrl,
 } from "@/lib/tv/url";
 import { ago, BackButton, Screen, SectionLabel, TvButton } from "@/components/tv/ui";
 
-function Clock() {
-  const [label, setLabel] = useState("—");
-  useEffect(() => {
-    const tick = () => {
-      const now = new Date();
-      const time = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(now);
-      const day = new Intl.DateTimeFormat(undefined, { weekday: "long" }).format(now);
-      setLabel(`${day} · ${time}`);
-    };
-    tick();
-    const id = window.setInterval(tick, 30_000);
-    return () => window.clearInterval(id);
-  }, []);
-  return <p className="text-sm text-muted tabular-nums md:text-base">{label}</p>;
-}
+const SUGGESTED = [
+  { title: "Wikipedia", url: "https://www.wikipedia.org" },
+  { title: "Internet Archive", url: "https://archive.org" },
+  { title: "NASA", url: "https://www.nasa.gov" },
+];
 
 export function HomeScreen({
   engineName,
   history,
-  onEdit,
   onOpen,
   onBookmarks,
-  onHistory,
-  onSettings,
-  onExit,
 }: {
   engineName: string;
   history: HistoryEntry[];
-  onEdit: () => void;
   onOpen: (url: string) => void;
   onBookmarks: () => void;
-  onHistory: () => void;
-  onSettings: () => void;
-  onExit: () => void;
 }) {
-  const recent = history.slice(0, 4);
+  const [draft, setDraft] = useState("");
+  const [notice, setNotice] = useState<string | null>(null);
+  const recent = history.slice(0, 8);
+
+  function submit() {
+    const resolved = resolveInput(draft);
+    if (resolved.kind === "empty") return;
+    if (resolved.kind === "url" && !isSafeClientUrl(resolved.url)) {
+      setNotice("Enter a public web address or a search.");
+      return;
+    }
+    setNotice(null);
+    onOpen(resolved.kind === "url" ? resolved.url : draft);
+  }
+
   return (
-    <Screen
-      footer={
-        <p className="text-sm text-muted">
-          <span className="md:hidden">Tap a tile. </span>
-          <span className="hidden md:inline">Arrows move · OK selects · Back returns</span>
-        </p>
-      }
-    >
-      <div className="px-5 pt-6 pb-8 md:px-10">
-        <header className="flex items-start justify-between gap-4">
-          <h1 className="min-w-0">
-            <img
-              src="/xtream-logo.png"
-              alt="Xtream"
-              className="h-36 w-auto max-w-full object-contain object-left md:h-44"
-            />
-          </h1>
-          <Clock />
-        </header>
-
-        <TvButton
-          primary
-          onClick={onEdit}
-          className="mt-8 flex min-h-16 w-full items-center gap-3 bg-surface px-4 text-left"
+    <Screen>
+      <div className="px-5 pt-6 pb-8">
+        <img src="/xtream-logo.png" alt="Xtream" className="h-24 w-auto max-w-full object-contain object-left" />
+        <form
+          className="mt-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            submit();
+          }}
         >
-          <Search className="size-5 shrink-0 text-amber" />
-          <span className="min-w-0 flex-1 truncate text-lg text-muted">
+          <label className="sr-only" htmlFor="address">
             Search {engineName} or enter an address
-          </span>
-          <span className="rounded-lg bg-amber px-3 py-2 text-sm font-semibold text-amber-ink">Go</span>
-        </TvButton>
-
-        <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-4">
-          <TvButton onClick={onBookmarks} className="flex min-h-12 items-center justify-center gap-2 bg-surface-2 font-semibold text-fg">
-            <Star className="size-4" />
+          </label>
+          <input
+            id="address"
+            value={draft}
+            onChange={(event) => {
+              setDraft(event.target.value);
+              setNotice(null);
+            }}
+            placeholder={`Search ${engineName} or enter an address`}
+            enterKeyHint="go"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            className="w-full rounded-2xl bg-surface px-4 py-4 text-base text-fg outline-none placeholder:text-muted focus:outline focus:outline-2 focus:outline-amber"
+          />
+        </form>
+        {notice ? <p className="mt-2 text-sm text-danger">{notice}</p> : null}
+        <div className="mt-4 flex gap-3">
+          <TvButton onClick={submit} className="min-h-12 bg-amber px-6 font-semibold text-amber-ink">
+            Go
+          </TvButton>
+          <TvButton onClick={onBookmarks} className="min-h-12 bg-surface px-5 font-semibold text-fg">
             Bookmarks
-          </TvButton>
-          <TvButton onClick={onHistory} className="flex min-h-12 items-center justify-center gap-2 bg-surface-2 font-semibold text-fg">
-            <Clock3 className="size-4" />
-            History
-          </TvButton>
-          <TvButton onClick={onSettings} className="flex min-h-12 items-center justify-center gap-2 bg-surface-2 font-semibold text-fg">
-            <Settings className="size-4" />
-            Settings
-          </TvButton>
-          <TvButton onClick={onExit} className="flex min-h-12 items-center justify-center gap-2 bg-surface-2 font-semibold text-fg">
-            <Power className="size-4" />
-            Exit
           </TvButton>
         </div>
 
-        <section className="mt-8">
-          <SectionLabel>Open movies</SectionLabel>
-          <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
-            {FILMS.map((film) => (
-              <TvButton
-                key={film.url}
-                onClick={() => onOpen(film.url)}
-                className="flex min-h-32 flex-col items-start justify-between bg-surface p-4 text-left"
-              >
-                <span className="font-display text-2xl text-amber">{film.n}</span>
-                <span>
-                  <span className="block text-lg font-semibold text-fg">{film.title}</span>
-                  <span className="mt-1 block text-sm text-muted">{film.note}</span>
-                </span>
-              </TvButton>
-            ))}
-          </div>
-        </section>
-
-        <section className="mt-8">
-          <SectionLabel>Try a page</SectionLabel>
-          <div className="mt-3 grid gap-3 md:grid-cols-2">
-            {STARTER_PAGES.map((page) => (
-              <TvButton
-                key={page.url}
-                onClick={() => onOpen(page.url)}
-                className="flex min-h-16 items-center justify-between gap-3 bg-surface px-4 text-left"
-              >
-                <span>
-                  <span className="block text-lg font-semibold text-fg">{page.title}</span>
-                  <span className="block text-sm text-muted">{page.note}</span>
-                </span>
-                <Globe className="size-5 shrink-0 text-amber" />
-              </TvButton>
-            ))}
-          </div>
-        </section>
-
-        <section className="mt-8">
-          <SectionLabel>Recent</SectionLabel>
-          {recent.length === 0 ? (
-            <p className="mt-3 text-base text-muted">Pages and videos you open will show up here.</p>
-          ) : (
-            <div className="mt-3 grid gap-2">
+        {recent.length > 0 ? (
+          <section className="mt-8">
+            <SectionLabel>Recent</SectionLabel>
+            <div className="mt-3 flex gap-3 overflow-x-auto pb-1">
               {recent.map((item) => (
                 <TvButton
                   key={item.id}
                   onClick={() => onOpen(item.url)}
-                  className="flex min-h-14 w-full items-center justify-between gap-3 bg-surface px-4 text-left"
+                  className="flex min-h-16 w-40 shrink-0 flex-col items-start justify-center bg-surface px-4 text-left"
                 >
-                  <span className="min-w-0">
-                    <span className="block truncate text-base font-semibold text-fg">{item.title}</span>
-                    <span className="block truncate text-sm text-muted">{hostOf(item.url)}</span>
-                  </span>
-                  <span className="shrink-0 text-sm text-muted">{ago(item.visitedAt)}</span>
+                  <span className="block w-full truncate text-base font-semibold text-fg">{item.title}</span>
+                  <span className="block w-full truncate text-sm text-muted">{hostOf(item.url)}</span>
                 </TvButton>
               ))}
             </div>
-          )}
+          </section>
+        ) : null}
+
+        <section className="mt-8">
+          <SectionLabel>Suggested</SectionLabel>
+          <div className="mt-3 flex gap-3 overflow-x-auto pb-1">
+            {SUGGESTED.map((page) => (
+              <TvButton
+                key={page.url}
+                onClick={() => onOpen(page.url)}
+                className="flex min-h-16 w-40 shrink-0 items-center bg-surface px-4 text-left text-base font-semibold text-fg"
+              >
+                {page.title}
+              </TvButton>
+            ))}
+          </div>
         </section>
       </div>
     </Screen>
@@ -333,7 +283,7 @@ export function PageScreen({
   const title = page?.title || (failure ? "Unable to load this page" : titleFromUrl(url));
 
   return (
-    <div className="flex h-dvh flex-col bg-bg text-fg">
+    <div className="flex h-full flex-col bg-bg text-fg">
       <header className="shrink-0 border-b border-line px-4 py-3 md:px-8">
         <div className="flex items-center gap-2">
           <BackButton onClick={onBack} primary />
@@ -370,7 +320,7 @@ export function PageScreen({
           </TvButton>
         </div>
         <div className="mt-3 h-1 overflow-hidden rounded-full bg-surface">
-          {loading ? <div className="h-full w-1/3 bg-amber motion-safe:animate-pulse" /> : null}
+          {loading ? <div className="h-full w-1/3 rounded-full bg-amber motion-safe:animate-pulse" /> : null}
         </div>
       </header>
 
@@ -390,9 +340,14 @@ export function PageScreen({
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-6 md:px-10">
           {loading ? (
-            <p className="text-lg text-muted" aria-live="polite">
-              Opening {hostOf(url)}…
-            </p>
+            <div className="flex h-full min-h-[50dvh] flex-col items-center justify-center gap-6" aria-live="polite">
+              <div className="relative grid size-20 place-items-center">
+                <span className="absolute inset-0 rounded-full border border-line" />
+                <span className="xtream-spin absolute inset-0 rounded-full border-2 border-transparent border-t-amber border-r-magenta" />
+                <span className="size-2 rounded-full bg-amber" />
+              </div>
+              <p className="text-sm font-semibold tracking-widest text-fg uppercase">Loading</p>
+            </div>
           ) : failure ? (
             <div className="max-w-xl">
               <p className="text-sm font-semibold tracking-widest text-danger uppercase">Page</p>

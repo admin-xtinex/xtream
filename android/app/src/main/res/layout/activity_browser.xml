@@ -94,32 +94,31 @@
             android:textStyle="bold" />
     </LinearLayout>
 
-    <LinearLayout
+    <FrameLayout
         android:id="@+id/gate"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:background="#F202030A"
         android:clickable="true"
         android:focusable="true"
-        android:gravity="center"
-        android:orientation="vertical"
         android:visibility="gone">
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/gate_title"
-            android:textColor="#F4F7FF"
-            android:textSize="28sp"
-            android:textStyle="bold" />
+        <View
+            android:id="@+id/load_ring"
+            android:layout_width="84dp"
+            android:layout_height="84dp"
+            android:layout_gravity="center"
+            android:background="@drawable/load_ring" />
 
         <TextView
-            android:id="@+id/gate_count"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:textColor="#3ECBFF"
-            android:textSize="42sp"
-            android:textStyle="bold" />
-    </LinearLayout>
+            android:layout_gravity="center"
+            android:layout_marginTop="120dp"
+            android:letterSpacing="0.18"
+            android:text="@string/loading"
+            android:textAllCaps="true"
+            android:textColor="#F4F7FF"
+            android:textSize="14sp" />
+    </FrameLayout>
 </FrameLayout>

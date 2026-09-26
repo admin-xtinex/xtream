@@ -28,7 +28,7 @@ export function Keyboard({ draft, placeholder, goLabel, notice, onDraft, onClose
   }
 
   return (
-    <div className="flex h-dvh flex-col bg-bg text-fg">
+    <div className="flex h-full flex-col bg-bg text-fg">
       <div className="px-5 pt-6 md:px-10">
         <p className="text-sm font-semibold tracking-widest text-amber uppercase">Address</p>
         <div className="mt-3 min-h-16 rounded-xl bg-surface px-4 py-3" aria-live="polite">
