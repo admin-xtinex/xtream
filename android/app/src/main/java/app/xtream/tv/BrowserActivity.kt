@@ -8,9 +8,11 @@ import android.net.Uri
 import android.os.Bundle
 import android.util.Log
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
 import android.view.animation.AnimationUtils
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -21,8 +23,14 @@ import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.ProgressBar
 import android.widget.TextView
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
+import java.io.ByteArrayInputStream
+import java.net.HttpURLConnection
+import java.net.URL
 
 class BrowserActivity : Activity() {
     private lateinit var web: WebView
@@ -37,10 +45,18 @@ class BrowserActivity : Activity() {
     private var homeHost: String = ""
     @Volatile
     private var pageHost: String = ""
+    private var isVideoFullscreen: Boolean = false
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        @Suppress("DEPRECATION")
+        window.decorView.setOnSystemUiVisibilityChangeListener { visibility ->
+            if (isVideoFullscreen && (visibility and View.SYSTEM_UI_FLAG_FULLSCREEN) == 0) {
+                setImmersiveFullscreen(true)
+            }
+        }
         setContentView(R.layout.activity_browser)
         web = findViewById(R.id.web)
         chrome = findViewById(R.id.chrome)
@@ -55,6 +71,7 @@ class BrowserActivity : Activity() {
         val root = findViewById<FrameLayout>(R.id.root)
         val isTv = resources.getBoolean(R.bool.is_television)
 
+        WebView.setWebContentsDebuggingEnabled(true)
         web.settings.javaScriptEnabled = true
         web.settings.domStorageEnabled = true
         web.settings.mediaPlaybackRequiresUserGesture = false
@@ -98,6 +115,7 @@ class BrowserActivity : Activity() {
                 customView = view
                 customCallback = callback
                 chrome.visibility = View.GONE
+                setImmersiveFullscreen(true)
                 if (!isTv) {
                     requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
                 }
@@ -119,6 +137,7 @@ class BrowserActivity : Activity() {
                 customCallback?.onCustomViewHidden()
                 customCallback = null
                 chrome.visibility = View.VISIBLE
+                setImmersiveFullscreen(false)
                 if (!isTv) {
                     requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
                 }
@@ -158,14 +177,28 @@ class BrowserActivity : Activity() {
         web.webChromeClient = chromeClient
         web.webViewClient = object : WebViewClient() {
             override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
-                val blocked = AdBlock.blocked(this@BrowserActivity, request.url, pageHost, request.isForMainFrame, request.requestHeaders)
-                return if (blocked) {
-                    Log.d("XtreamAdBlock", "BLOCKED: ${request.url}")
-                    AdBlock.emptyResponse(request.url)
-                } else {
-                    Log.v("XtreamAdBlock", "ALLOWED: ${request.url}")
-                    null
+                val url = request.url
+                val blocked = AdBlock.blocked(this@BrowserActivity, url, pageHost, request.isForMainFrame, request.requestHeaders)
+                if (blocked) {
+                    Log.d("XtreamAdBlock", "BLOCKED: $url")
+                    return AdBlock.emptyResponse(url)
                 }
+
+                val host = url.host?.lowercase().orEmpty()
+                val path = url.path?.lowercase().orEmpty()
+
+                if (host.contains("playit")) {
+                    val streamResp = handlePlayitStream(url, request.requestHeaders)
+                    if (streamResp != null) return streamResp
+                }
+
+                if (path.contains("master.txt") || path.contains("master.m3u8") || path.contains("/m3/") || path.endsWith(".m3u8")) {
+                    val healed = handleHlsPlaylist(url, request.requestHeaders)
+                    if (healed != null) return healed
+                }
+
+                Log.v("XtreamAdBlock", "ALLOWED: $url")
+                return null
             }
 
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
@@ -427,7 +460,139 @@ class BrowserActivity : Activity() {
         if (web.canGoBack()) web.goBack() else super.onBackPressed()
     }
 
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus && (customView != null || isVideoFullscreen)) {
+            setImmersiveFullscreen(true)
+        }
+    }
+
+    override fun dispatchTouchEvent(ev: MotionEvent?): Boolean {
+        if (isVideoFullscreen) {
+            val controller = WindowCompat.getInsetsController(window, window.decorView)
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+        }
+        return super.dispatchTouchEvent(ev)
+    }
+
+    private fun setImmersiveFullscreen(enable: Boolean) {
+        isVideoFullscreen = enable
+        val window = this.window ?: return
+        WindowCompat.setDecorFitsSystemWindows(window, !enable)
+        val controller = WindowCompat.getInsetsController(window, window.decorView)
+        controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        if (enable) {
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility = (
+                View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+            )
+        } else {
+            controller.show(WindowInsetsCompat.Type.systemBars())
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE
+        }
+    }
+
+    private fun handlePlayitStream(url: Uri, reqHeaders: Map<String, String>): WebResourceResponse? {
+        var rawUrl = url.toString()
+        if (rawUrl.contains("playit15.xyz")) {
+            rawUrl = rawUrl.replace("playit15.xyz", "playit11.xyz")
+        }
+        val targetUri = Uri.parse(rawUrl)
+        val origHost = targetUri.host ?: "playit11.xyz"
+        val healthyNodes = listOf("playit11.xyz", "playit12.xyz", "playit13.xyz", "playit14.xyz")
+        val candidateHosts = (listOf(origHost) + healthyNodes).distinct()
+
+        for (node in candidateHosts) {
+            val candidateUrl = rawUrl.replace(origHost, node)
+            try {
+                val conn = (URL(candidateUrl).openConnection() as HttpURLConnection).apply {
+                    connectTimeout = 6000
+                    readTimeout = 12000
+                    requestMethod = "GET"
+                    instanceFollowRedirects = true
+                    reqHeaders.forEach { (k, v) ->
+                        if (!k.equals("Host", true)) setRequestProperty(k, v)
+                    }
+                    if (reqHeaders.none { it.key.equals("Referer", true) }) {
+                        setRequestProperty("Referer", "https://ogoplayer.xyz/")
+                    }
+                    if (reqHeaders.none { it.key.equals("Origin", true) }) {
+                        setRequestProperty("Origin", "https://ogoplayer.xyz")
+                    }
+                }
+                val code = conn.responseCode
+                if (code in 200..299) {
+                    val respHeaders = mutableMapOf(
+                        "Access-Control-Allow-Origin" to "*",
+                        "Access-Control-Allow-Methods" to "GET, POST, OPTIONS, HEAD",
+                        "Access-Control-Allow-Headers" to "*",
+                        "Content-Type" to (conn.contentType ?: "video/mp2t")
+                    )
+                    val mime = if (targetUri.path?.endsWith(".html") == true) "video/mp2t" else (conn.contentType ?: "video/mp2t")
+                    return WebResourceResponse(
+                        mime,
+                        null,
+                        200,
+                        "OK",
+                        respHeaders,
+                        conn.inputStream
+                    )
+                }
+            } catch (_: Exception) {}
+        }
+        return null
+    }
+
+    private fun handleHlsPlaylist(url: Uri, reqHeaders: Map<String, String>): WebResourceResponse? {
+        return try {
+            val conn = (URL(url.toString()).openConnection() as HttpURLConnection).apply {
+                connectTimeout = 6000
+                readTimeout = 8000
+                requestMethod = "GET"
+                instanceFollowRedirects = true
+                reqHeaders.forEach { (k, v) ->
+                    if (!k.equals("Host", true)) setRequestProperty(k, v)
+                }
+                if (reqHeaders.none { it.key.equals("Referer", true) }) {
+                    setRequestProperty("Referer", "https://ogoplayer.xyz/")
+                }
+                if (reqHeaders.none { it.key.equals("Origin", true) }) {
+                    setRequestProperty("Origin", "https://ogoplayer.xyz")
+                }
+            }
+            val code = conn.responseCode
+            if (code in 200..299) {
+                val text = conn.inputStream.bufferedReader().use { it.readText() }
+                val healed = text.replace("playit15.xyz", "playit11.xyz")
+                val respHeaders = mutableMapOf(
+                    "Access-Control-Allow-Origin" to "*",
+                    "Access-Control-Allow-Methods" to "GET, POST, OPTIONS, HEAD",
+                    "Access-Control-Allow-Headers" to "*",
+                    "Content-Type" to (conn.contentType ?: "application/vnd.apple.mpegurl")
+                )
+                WebResourceResponse(
+                    "application/vnd.apple.mpegurl",
+                    "UTF-8",
+                    200,
+                    "OK",
+                    respHeaders,
+                    ByteArrayInputStream(healed.toByteArray(Charsets.UTF_8))
+                )
+            } else null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     private fun exitVideo() {
+        setImmersiveFullscreen(false)
         if (customView != null) {
             (web.webChromeClient as? WebChromeClient)?.onHideCustomView()
             return
@@ -446,6 +611,7 @@ class BrowserActivity : Activity() {
         fun onVideoPlay() {
             runOnUiThread {
                 chrome.visibility = View.GONE
+                setImmersiveFullscreen(true)
                 if (!resources.getBoolean(R.bool.is_television)) {
                     requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
                 }
@@ -523,11 +689,19 @@ class BrowserActivity : Activity() {
               function isAd(src){
                 if (!src) return false;
                 src = String(src).toLowerCase();
+                if (src.indexOf('blob:') === 0 || src.indexOf('playit') !== -1 || src.indexOf('master.txt') !== -1 || src.indexOf('master.m3u8') !== -1 || src.indexOf('ogoplayer.xyz') !== -1) return false;
                 for (var i = 0; i < keys.length; i++) {
                   if (src.indexOf(keys[i]) !== -1) return true;
                 }
                 return false;
               }
+              window.addEventListener('error', function(e) {
+                if (e && e.message && (e.message.indexOf('label') !== -1 || e.message.indexOf('getVisualQuality') !== -1)) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  return true;
+                }
+              }, true);
               if (ads) {
                 document.addEventListener('click', function(e){
                   var target = e.target;
@@ -553,7 +727,7 @@ class BrowserActivity : Activity() {
                 try { v.muted = true; } catch (e) {}
                 try { v.pause(); } catch (e) {}
                 try {
-                  if (v.__xtreamSrc) {
+                  if (v.__xtreamSrc && v.__xtreamSrc !== src) {
                     var pos = v.__xtreamPos || 0;
                     var back = v.__xtreamSrc;
                     var resume = function() {
@@ -566,8 +740,6 @@ class BrowserActivity : Activity() {
                     };
                     v.addEventListener('loadeddata', resume);
                     v.src = back;
-                  } else if (v.duration && isFinite(v.duration)) {
-                    v.currentTime = v.duration;
                   }
                 } catch (e3) {}
                 setTimeout(function(){ v.__xtreamHold = false; }, 800);
@@ -576,8 +748,6 @@ class BrowserActivity : Activity() {
               function hook(v){
                 if (!v || v.__xtream) return;
                 v.__xtream = true;
-                var userSeek = false;
-                v.addEventListener('pointerdown', function(){ userSeek = true; setTimeout(function(){ userSeek = false; }, 1200); });
                 v.addEventListener('loadstart', function(){ skipAd(v); });
                 v.addEventListener('timeupdate', function(){
                   var src = v.currentSrc || v.src || '';
@@ -588,18 +758,6 @@ class BrowserActivity : Activity() {
                   if (v.currentTime > 1) {
                     v.__xtreamPos = v.currentTime;
                     if (v.currentSrc) v.__xtreamSrc = v.currentSrc;
-                  }
-                });
-                v.addEventListener('seeked', function(){
-                  if (window.__xtreamAds === false || userSeek || v.__xtreamHold) return;
-                  if (isAd(v.currentSrc || v.src || '')) {
-                    skipAd(v);
-                    return;
-                  }
-                  if ((v.__xtreamPos || 0) > 3 && v.currentTime < 1) {
-                    v.__xtreamHold = true;
-                    try { v.currentTime = v.__xtreamPos; } catch (e) {}
-                    setTimeout(function(){ v.__xtreamHold = false; }, 500);
                   }
                 });
                 v.addEventListener('play', function(){
@@ -946,7 +1104,20 @@ class BrowserActivity : Activity() {
                   window.__xtreamTogglePlay = function(){
                     var v = window.__xtreamVideo || getBestVideo();
                     if (v) {
-                      if (v.paused) v.play(); else v.pause();
+                      try {
+                        if (window.jwplayer && typeof window.jwplayer === 'function') {
+                          var jw = window.jwplayer();
+                          if (jw && typeof jw.play === 'function') {
+                            jw.play();
+                          } else {
+                            if (v.paused) v.play(); else v.pause();
+                          }
+                        } else {
+                          if (v.paused) v.play(); else v.pause();
+                        }
+                      } catch(e) {
+                        if (v.paused) v.play(); else v.pause();
+                      }
                       showOSD();
                     }
                     document.querySelectorAll('iframe').forEach(function(f){
@@ -959,7 +1130,21 @@ class BrowserActivity : Activity() {
                     if (v) {
                       var cur = v.currentTime || 0;
                       var dur = v.duration || 999999;
-                      v.currentTime = Math.min(dur, Math.max(0, cur + delta));
+                      var target = Math.min(dur, Math.max(0, cur + delta));
+                      try {
+                        if (window.jwplayer && typeof window.jwplayer === 'function') {
+                          var jw = window.jwplayer();
+                          if (jw && typeof jw.seek === 'function') {
+                            jw.seek(target);
+                          } else {
+                            v.currentTime = target;
+                          }
+                        } else {
+                          v.currentTime = target;
+                        }
+                      } catch(e) {
+                        v.currentTime = target;
+                      }
                       showOSD();
                     }
                     document.querySelectorAll('iframe').forEach(function(f){
@@ -1027,7 +1212,23 @@ class BrowserActivity : Activity() {
                     if (!ev || !ev.data) return;
                     if (ev.data === 'xtream-toggle-play') {
                       var v = window.__xtreamVideo || getBestVideo();
-                      if (v) { if (v.paused) v.play(); else v.pause(); showOSD(); }
+                      if (v) {
+                        try {
+                          if (window.jwplayer && typeof window.jwplayer === 'function') {
+                            var jw = window.jwplayer();
+                            if (jw && typeof jw.play === 'function') {
+                              jw.play();
+                            } else {
+                              if (v.paused) v.play(); else v.pause();
+                            }
+                          } else {
+                            if (v.paused) v.play(); else v.pause();
+                          }
+                        } catch(e) {
+                          if (v.paused) v.play(); else v.pause();
+                        }
+                        showOSD();
+                      }
                     } else if (ev.data === 'xtream-toggle-options') {
                       if (modal) { modal.classList.toggle('xt-open'); showOSD(); }
                     } else if (ev.data === 'xtream-next') {
@@ -1037,7 +1238,21 @@ class BrowserActivity : Activity() {
                       if (v2) {
                         var cur2 = v2.currentTime || 0;
                         var dur2 = v2.duration || 999999;
-                        v2.currentTime = Math.min(dur2, Math.max(0, cur2 + ev.data.delta));
+                        var target2 = Math.min(dur2, Math.max(0, cur2 + ev.data.delta));
+                        try {
+                          if (window.jwplayer && typeof window.jwplayer === 'function') {
+                            var jw2 = window.jwplayer();
+                            if (jw2 && typeof jw2.seek === 'function') {
+                              jw2.seek(target2);
+                            } else {
+                              v2.currentTime = target2;
+                            }
+                          } else {
+                            v2.currentTime = target2;
+                          }
+                        } catch(e) {
+                          v2.currentTime = target2;
+                        }
                         showOSD();
                       }
                     } else if (ev.data && ev.data.action === 'xtream-set-quality') {
@@ -1094,10 +1309,35 @@ class BrowserActivity : Activity() {
                     modal.classList.remove('xt-open');
                   });
 
+                  var isDraggingSeek = false;
+                  seek.addEventListener('pointerdown', function(){ isDraggingSeek = true; });
+                  seek.addEventListener('touchstart', function(){ isDraggingSeek = true; }, {passive: true});
+                  seek.addEventListener('mousedown', function(){ isDraggingSeek = true; });
+                  seek.addEventListener('change', function(){ isDraggingSeek = false; });
+                  seek.addEventListener('pointerup', function(){ isDraggingSeek = false; });
+                  seek.addEventListener('mouseup', function(){ isDraggingSeek = false; });
+                  seek.addEventListener('touchend', function(){ isDraggingSeek = false; });
+
                   seek.addEventListener('input', function(){
-                    var v = window.__xtreamVideo;
+                    var v = window.__xtreamVideo || getBestVideo();
                     if (!v || !v.duration) return;
-                    v.currentTime = (seek.value / 1000) * v.duration;
+                    var targetSec = (seek.value / 1000) * v.duration;
+                    try {
+                      if (window.jwplayer && typeof window.jwplayer === 'function') {
+                        var jw = window.jwplayer();
+                        if (jw && typeof jw.seek === 'function') {
+                          jw.seek(targetSec);
+                        } else {
+                          v.currentTime = targetSec;
+                        }
+                      } else {
+                        v.currentTime = targetSec;
+                      }
+                    } catch(e) {
+                      v.currentTime = targetSec;
+                    }
+                    var curSpan = document.getElementById('xt-cur');
+                    if (curSpan) curSpan.textContent = formatClock(targetSec);
                     showOSD();
                   });
 
@@ -1169,7 +1409,7 @@ class BrowserActivity : Activity() {
 
                 if (curSpan) curSpan.textContent = formatClock(best.currentTime || 0);
                 if (durSpan) durSpan.textContent = formatClock(best.duration || 0);
-                if (seekInput && best.duration) {
+                if (seekInput && best.duration && !isDraggingSeek) {
                   seekInput.value = Math.floor(((best.currentTime || 0) / best.duration) * 1000);
                 }
                 if (playButton) {
