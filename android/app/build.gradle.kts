@@ -11,11 +11,8 @@ android {
         applicationId = "app.xtream.tv"
         minSdk = 24
         targetSdk = 35
-        versionCode = 12
-        versionName = "2.1.0"
-        ndk {
-            abiFilters += listOf("arm64-v8a")
-        }
+        versionCode = 13
+        versionName = "2.2.0"
     }
 
     flavorDimensions += "device"
@@ -45,15 +42,9 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
-
-    packaging {
-        jniLibs {
-            useLegacyPackaging = true
-        }
-    }
 }
 
 dependencies {
-    implementation("org.mozilla.geckoview:geckoview-arm64-v8a:140.0.20250707120347")
+    implementation("androidx.webkit:webkit:1.12.1")
     testImplementation("junit:junit:4.13.2")
 }

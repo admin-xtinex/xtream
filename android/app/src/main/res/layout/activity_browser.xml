@@ -5,11 +5,10 @@
     android:layout_height="match_parent"
     android:background="#02030A">
 
-    <org.mozilla.geckoview.GeckoView
+    <WebView
         android:id="@+id/web"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:focusable="true" />
+        android:layout_height="match_parent" />
 
     <LinearLayout
         android:id="@+id/chrome"
@@ -92,6 +91,35 @@
             android:textAllCaps="false"
             android:textColor="#041018"
             android:textSize="16sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/gate"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#F202030A"
+        android:clickable="true"
+        android:focusable="true"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/gate_title"
+            android:textColor="#F4F7FF"
+            android:textSize="28sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/gate_count"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:textColor="#3ECBFF"
+            android:textSize="42sp"
             android:textStyle="bold" />
     </LinearLayout>
 </FrameLayout>

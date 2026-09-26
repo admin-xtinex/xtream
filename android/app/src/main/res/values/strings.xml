@@ -18,4 +18,6 @@
     <string name="remove">Remove</string>
     <string name="empty_bookmarks">No bookmarks yet. Open a page and press Save.</string>
     <string name="bad_address">Enter a public web address or a search.</string>
+    <string name="gate_title">Closing ads</string>
+    <string name="gate_wait">Checking the page</string>
 </resources>

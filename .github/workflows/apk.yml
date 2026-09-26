@@ -101,11 +101,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          notes="Gecko browser engine for arm64 phones and TVs only. One CPU architecture, so each APK is about 80 MB instead of the 311 MB universal build."
-          if gh release view v2.1.0 >/dev/null 2>&1; then
-            gh release upload v2.1.0 xtream-tv.apk xtream-mobile.apk --clobber
+          notes="Small WebView build. Each page waits 5 seconds while ad requests are closed. Ad videos in the player are skipped without restarting the movie."
+          if gh release view v2.2.0 >/dev/null 2>&1; then
+            gh release upload v2.2.0 xtream-tv.apk xtream-mobile.apk --clobber
           else
-            gh release create v2.1.0 xtream-tv.apk xtream-mobile.apk \
-              --title "Xtream 2.1.0" \
+            gh release create v2.2.0 xtream-tv.apk xtream-mobile.apk \
+              --title "Xtream 2.2.0" \
               --notes "$notes"
           fi
