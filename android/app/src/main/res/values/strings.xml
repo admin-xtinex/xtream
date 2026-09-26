@@ -22,4 +22,5 @@
     <string name="history">🕒 History</string>
     <string name="clear_history">Clear History</string>
     <string name="empty_history">No history yet. Pages you visit will appear here.</string>
+    <string name="old_engine">This device\'s web engine (Chrome %1$d) is out of date. Update Android System WebView to get security fixes.</string>
 </resources>

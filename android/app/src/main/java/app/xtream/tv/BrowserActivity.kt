@@ -3,6 +3,7 @@ package app.xtream.tv
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.pm.ActivityInfo
+import android.content.pm.ApplicationInfo
 import android.content.res.Configuration
 import android.net.Uri
 import android.os.Bundle
@@ -14,6 +15,7 @@ import android.view.animation.AnimationUtils
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.webkit.JavascriptInterface
+import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -47,6 +49,7 @@ class BrowserActivity : Activity() {
     private var pageHost: String = ""
     private var isVideoFullscreen: Boolean = false
     private lateinit var pointer: ScreenPointer
+    private var webGone = false
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -72,7 +75,8 @@ class BrowserActivity : Activity() {
         val root = findViewById<FrameLayout>(R.id.root)
         val isTv = resources.getBoolean(R.bool.is_television)
 
-        WebView.setWebContentsDebuggingEnabled(true)
+        // Remote inspection exposes cookies and signed-in sessions, so only debug builds allow it.
+        WebView.setWebContentsDebuggingEnabled((applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0)
         web.settings.javaScriptEnabled = true
         web.settings.domStorageEnabled = true
         web.settings.mediaPlaybackRequiresUserGesture = false
@@ -92,6 +96,7 @@ class BrowserActivity : Activity() {
             web.settings.safeBrowsingEnabled = true
         }
         web.settings.javaScriptCanOpenWindowsAutomatically = false
+        web.settings.setGeolocationEnabled(false)
         web.settings.setSupportMultipleWindows(true)
         web.setDownloadListener { url, _, _, _, _ ->
             Log.d("Xtream", "Download ignored (downloads not supported): $url")
@@ -190,12 +195,20 @@ class BrowserActivity : Activity() {
                 val host = url.host?.lowercase().orEmpty()
                 val path = url.path?.lowercase().orEmpty()
 
-                if (host.contains("playit")) {
+                val streamProxy = host.contains("playit")
+                val playlistProxy = path.contains("master.txt") || path.contains("master.m3u8") || path.contains("/m3/") || path.endsWith(".m3u8")
+                // The app refetches these itself, so a page must never point it at the TV's own network.
+                if ((streamProxy || playlistProxy) && !LocalNetwork.isPublic(url.toString())) {
+                    Log.d("XtreamAdBlock", "LOCAL ADDRESS NOT PROXIED: $url")
+                    return null
+                }
+
+                if (streamProxy) {
                     val streamResp = handlePlayitStream(url, request.requestHeaders)
                     if (streamResp != null) return streamResp
                 }
 
-                if (path.contains("master.txt") || path.contains("master.m3u8") || path.contains("/m3/") || path.endsWith(".m3u8")) {
+                if (playlistProxy) {
                     val healed = handleHlsPlaylist(url, request.requestHeaders)
                     if (healed != null) return healed
                 }
@@ -226,6 +239,17 @@ class BrowserActivity : Activity() {
                     }
                 }
                 return false
+            }
+
+            @android.annotation.TargetApi(26)
+            override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+                // A crashed or killed page engine must not take the whole app down with it.
+                Log.w("Xtream", "Page renderer gone (crash=${detail.didCrash()})")
+                (view.parent as? ViewGroup)?.removeView(view)
+                webGone = true
+                view.destroy()
+                recreate()
+                return true
             }
 
             override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
@@ -309,7 +333,9 @@ class BrowserActivity : Activity() {
         pointer.bind(findViewById(R.id.nav_mode))
         pointer.attach()
 
-        val start = intent.getStringExtra(EXTRA_URL) ?: intent.dataString
+        // Other apps can open this screen, so accept only a plain http(s) address.
+        val start = (intent.getStringExtra(EXTRA_URL) ?: intent.dataString)
+            ?.takeIf { Uri.parse(it).scheme?.lowercase() in setOf("http", "https") && !Uri.parse(it).host.isNullOrBlank() }
         if (start.isNullOrBlank()) {
             finish()
             return
@@ -567,7 +593,7 @@ class BrowserActivity : Activity() {
                     }
                 }
                 val code = conn.responseCode
-                if (code in 200..299) {
+                if (code in 200..299 && LocalNetwork.isPublic(conn.url.toString())) {
                     val respHeaders = mutableMapOf(
                         "Access-Control-Allow-Origin" to "*",
                         "Access-Control-Allow-Methods" to "GET, POST, OPTIONS, HEAD",
@@ -607,7 +633,7 @@ class BrowserActivity : Activity() {
                 }
             }
             val code = conn.responseCode
-            if (code in 200..299) {
+            if (code in 200..299 && LocalNetwork.isPublic(conn.url.toString())) {
                 val text = conn.inputStream.bufferedReader().use { it.readText() }
                 val healed = text.replace("playit15.xyz", "playit11.xyz")
                 val respHeaders = mutableMapOf(
@@ -666,8 +692,10 @@ class BrowserActivity : Activity() {
     }
 
     override fun onDestroy() {
-        web.stopLoading()
-        web.destroy()
+        if (!webGone) {
+            web.stopLoading()
+            web.destroy()
+        }
         super.onDestroy()
     }
 

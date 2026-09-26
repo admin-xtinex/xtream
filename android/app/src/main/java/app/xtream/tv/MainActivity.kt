@@ -65,6 +65,10 @@ class MainActivity : Activity() {
         links.forEach { entry ->
             shortcuts.addView(tile(entry.title) { open(entry.url, entry.title) })
         }
+        EngineAge.outdatedMajor(this)?.let { major ->
+            notice.text = getString(R.string.old_engine, major)
+            notice.visibility = TextView.VISIBLE
+        }
         address.requestFocus()
         pointer = ScreenPointer(this)
         pointer.bind(findViewById(R.id.nav_mode))

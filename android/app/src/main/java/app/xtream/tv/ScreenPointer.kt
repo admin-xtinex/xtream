@@ -111,11 +111,25 @@ class ScreenPointer(private val activity: Activity) {
     }
 
     private fun slide(dx: Float, dy: Float) {
-        val limitX = layer.width.toFloat().coerceAtLeast(1f)
-        val limitY = layer.height.toFloat().coerceAtLeast(1f)
-        x = (x + dx).coerceIn(0f, limitX)
-        y = (y + dy).coerceIn(0f, limitY)
+        val area = contentArea()
+        x = (x + dx).coerceIn(area[0], area[2])
+        y = (y + dy).coerceIn(area[1], area[3])
         refresh()
+    }
+
+    /** Left, top, right, bottom of the app's own content, in pointer-layer coordinates. */
+    private fun contentArea(): FloatArray {
+        val content = activity.findViewById<View>(android.R.id.content)
+        if (content == null || content.width == 0 || content.height == 0) {
+            return floatArrayOf(0f, 0f, layer.width.toFloat().coerceAtLeast(1f), layer.height.toFloat().coerceAtLeast(1f))
+        }
+        val box = IntArray(2)
+        val origin = IntArray(2)
+        content.getLocationInWindow(box)
+        layer.getLocationInWindow(origin)
+        val left = (box[0] - origin[0]).toFloat()
+        val top = (box[1] - origin[1]).toFloat()
+        return floatArrayOf(left, top, left + content.width - 1, top + content.height - 1)
     }
 
     /**
@@ -144,7 +158,14 @@ class ScreenPointer(private val activity: Activity) {
             val sx = if (dx < 0) -1 else if (dx > 0) 1 else 0
             val sy = if (dy < 0) -1 else if (dy > 0) 1 else 0
             target.evaluateJavascript("($WEB_SCROLL)($fx,$fy,$sx,$sy)") { result ->
-                if (result != "true") slide(dx, dy)
+                if (result == "true") return@evaluateJavascript
+                val direction = if (sx < 0 || sy < 0) -1 else 1
+                val native = if (sy != 0) target.canScrollVertically(direction) else target.canScrollHorizontally(direction)
+                when {
+                    !native -> slide(dx, dy)
+                    sy != 0 -> target.scrollBy(0, (target.height * 0.35f * direction).toInt())
+                    else -> target.scrollBy((target.width * 0.35f * direction).toInt(), 0)
+                }
             }
             return true
         }
@@ -216,23 +237,46 @@ class ScreenPointer(private val activity: Activity) {
     private companion object {
         /** Scrolls the column under (fx, fy), falling back to the page; answers whether anything moved. */
         const val WEB_SCROLL = """function(fx,fy,sx,sy){
-          var x=fx*innerWidth,y=fy*innerHeight,dx=sx*innerWidth*0.35,dy=sy*innerHeight*0.35;
+          var w=window.innerWidth||document.documentElement.clientWidth;
+          var h=window.innerHeight||document.documentElement.clientHeight;
+          var x=Math.min(Math.max(fx*w,1),w-2),y=Math.min(Math.max(fy*h,1),h-2);
+          var dx=Math.round(sx*w*0.35),dy=Math.round(sy*h*0.35);
           function room(e){
+            if(!e||e.nodeType!==1)return false;
             var s=getComputedStyle(e);
             if(sy){
-              if(!/(auto|scroll|overlay)/.test(s.overflowY)||e.scrollHeight<=e.clientHeight+1)return false;
+              if(e.scrollHeight<=e.clientHeight+1||!/(auto|scroll|overlay)/.test(s.overflowY))return false;
               return sy<0?e.scrollTop>0:e.scrollTop+e.clientHeight<e.scrollHeight-1;
             }
-            if(!/(auto|scroll|overlay)/.test(s.overflowX)||e.scrollWidth<=e.clientWidth+1)return false;
+            if(e.scrollWidth<=e.clientWidth+1||!/(auto|scroll|overlay)/.test(s.overflowX))return false;
             return sx<0?e.scrollLeft>0:e.scrollLeft+e.clientWidth<e.scrollWidth-1;
           }
-          for(var e=document.elementFromPoint(x,y);e&&e!==document.documentElement;e=e.parentElement){
-            if(room(e)){e.scrollBy({left:dx,top:dy,behavior:'instant'});return true;}
+          function push(e){
+            var t=e.scrollTop,l=e.scrollLeft;
+            e.scrollTop=t+dy;e.scrollLeft=l+dx;
+            return e.scrollTop!==t||e.scrollLeft!==l;
           }
-          var p=document.scrollingElement||document.documentElement,t=p.scrollTop,l=p.scrollLeft;
-          window.scrollBy({left:dx,top:dy,behavior:'instant'});
-          return p.scrollTop!==t||p.scrollLeft!==l;
+          function chain(px,py){
+            for(var e=document.elementFromPoint(px,py);e&&e!==document.documentElement;e=e.parentElement){
+              if(e!==document.body&&room(e)&&push(e))return true;
+            }
+            return false;
+          }
+          if(chain(x,y))return true;
+          var p=document.scrollingElement||document.documentElement;
+          var t=p.scrollTop,l=p.scrollLeft;
+          window.scrollTo(window.pageXOffset+dx,window.pageYOffset+dy);
+          if(p.scrollTop!==t||p.scrollLeft!==l)return true;
+          if(document.body&&room(document.body)&&push(document.body))return true;
+          if(chain(x,h/2)||chain(w/2,h/2))return true;
+          var best=null,area=0,all=document.querySelectorAll('div,main,section,article,ul');
+          for(var i=0;i<all.length;i++){
+            var r=all[i].getBoundingClientRect(),a=r.width*r.height;
+            if(a>area&&r.bottom>0&&r.top<h&&room(all[i])){best=all[i];area=a;}
+          }
+          return !!(best&&push(best));
         }"""
+
     }
 
     private class PointerView(context: Context) : View(context) {
