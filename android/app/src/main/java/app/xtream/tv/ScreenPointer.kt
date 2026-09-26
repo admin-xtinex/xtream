@@ -5,10 +5,12 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.os.SystemClock
+import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.webkit.WebView
 import android.widget.Button
 import android.widget.FrameLayout
 
@@ -16,12 +18,16 @@ import android.widget.FrameLayout
 class ScreenPointer(private val activity: Activity) {
     private val layer = PointerView(activity)
     private val step = 28f * activity.resources.displayMetrics.density
+    private val edgeBand = 40f * activity.resources.displayMetrics.density
     private var enabled = NavMode.isOn(activity)
     private var suppressed = false
     private var x = 0f
     private var y = 0f
     private var placed = false
     private var refreshButton: (() -> Unit)? = null
+
+    /** Window y where content stops being hidden behind a toolbar drawn over it. */
+    var topInset: () -> Int = { 0 }
 
     fun attach() {
         val decor = activity.window.decorView as ViewGroup
@@ -100,11 +106,82 @@ class ScreenPointer(private val activity: Activity) {
 
     private fun move(dx: Float, dy: Float) {
         placeIfNeeded()
+        if (scrollAtEdge(dx, dy)) return
+        slide(dx, dy)
+    }
+
+    private fun slide(dx: Float, dy: Float) {
         val limitX = layer.width.toFloat().coerceAtLeast(1f)
         val limitY = layer.height.toFloat().coerceAtLeast(1f)
         x = (x + dx).coerceIn(0f, limitX)
         y = (y + dy).coerceIn(0f, limitY)
         refresh()
+    }
+
+    /**
+     * Pushing the pointer into the edge of something scrollable scrolls it instead,
+     * so long pages and side columns can be read in Cursor mode. The pointer only
+     * keeps moving once there is nothing left to scroll that way.
+     */
+    private fun scrollAtEdge(dx: Float, dy: Float): Boolean {
+        val origin = IntArray(2)
+        layer.getLocationInWindow(origin)
+        val wx = x + origin[0]
+        val wy = y + origin[1]
+        val target = scrollableAt(activity.window.decorView, wx, wy, dx, dy) ?: return false
+        val box = IntArray(2)
+        target.getLocationInWindow(box)
+        val top = maxOf(box[1], topInset()).toFloat()
+        val band = edgeBand
+        val atEdge = (dy < 0 && wy <= top + band) ||
+            (dy > 0 && wy >= box[1] + target.height - band) ||
+            (dx < 0 && wx <= box[0] + band) ||
+            (dx > 0 && wx >= box[0] + target.width - band)
+        if (!atEdge) return false
+        if (target is WebView) {
+            val fx = ((wx - box[0]) / target.width.coerceAtLeast(1)).coerceIn(0f, 1f)
+            val fy = ((wy - box[1]) / target.height.coerceAtLeast(1)).coerceIn(0f, 1f)
+            val sx = if (dx < 0) -1 else if (dx > 0) 1 else 0
+            val sy = if (dy < 0) -1 else if (dy > 0) 1 else 0
+            target.evaluateJavascript("($WEB_SCROLL)($fx,$fy,$sx,$sy)") { result ->
+                if (result != "true") slide(dx, dy)
+            }
+            return true
+        }
+        val direction = if (dx < 0 || dy < 0) -1 else 1
+        if (dy != 0f) {
+            target.scrollBy(0, (target.height * 0.35f * direction).toInt())
+        } else {
+            target.scrollBy((target.width * 0.35f * direction).toInt(), 0)
+        }
+        return true
+    }
+
+    /**
+     * Follows the views under the point the way a touch would (topmost first) and
+     * returns the deepest one on that path that can scroll the requested way.
+     */
+    private fun scrollableAt(view: View, wx: Float, wy: Float, dx: Float, dy: Float): View? {
+        if (view === layer || view.visibility != View.VISIBLE) return null
+        val box = IntArray(2)
+        view.getLocationInWindow(box)
+        if (wx < box[0] || wx >= box[0] + view.width || wy < box[1] || wy >= box[1] + view.height) return null
+        if (view is ViewGroup) {
+            for (i in view.childCount - 1 downTo 0) {
+                val child = view.getChildAt(i)
+                if (child === layer || child.visibility != View.VISIBLE) continue
+                val cb = IntArray(2)
+                child.getLocationInWindow(cb)
+                val hit = wx >= cb[0] && wx < cb[0] + child.width && wy >= cb[1] && wy < cb[1] + child.height
+                if (!hit) continue
+                scrollableAt(child, wx, wy, dx, dy)?.let { return it }
+                break
+            }
+        }
+        if (view is WebView) return view
+        val direction = if (dx < 0 || dy < 0) -1 else 1
+        val scrolls = if (dy != 0f) view.canScrollVertically(direction) else view.canScrollHorizontally(direction)
+        return if (scrolls) view else null
     }
 
     private fun click() {
@@ -113,6 +190,8 @@ class ScreenPointer(private val activity: Activity) {
         val now = SystemClock.uptimeMillis()
         val down = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, x, y, 0)
         val up = MotionEvent.obtain(now, now + 16, MotionEvent.ACTION_UP, x, y, 0)
+        down.source = InputDevice.SOURCE_TOUCHSCREEN
+        up.source = InputDevice.SOURCE_TOUCHSCREEN
         activity.dispatchTouchEvent(down)
         activity.dispatchTouchEvent(up)
         down.recycle()
@@ -132,6 +211,28 @@ class ScreenPointer(private val activity: Activity) {
         layer.py = y
         layer.invalidate()
         refreshButton?.invoke()
+    }
+
+    private companion object {
+        /** Scrolls the column under (fx, fy), falling back to the page; answers whether anything moved. */
+        const val WEB_SCROLL = """function(fx,fy,sx,sy){
+          var x=fx*innerWidth,y=fy*innerHeight,dx=sx*innerWidth*0.35,dy=sy*innerHeight*0.35;
+          function room(e){
+            var s=getComputedStyle(e);
+            if(sy){
+              if(!/(auto|scroll|overlay)/.test(s.overflowY)||e.scrollHeight<=e.clientHeight+1)return false;
+              return sy<0?e.scrollTop>0:e.scrollTop+e.clientHeight<e.scrollHeight-1;
+            }
+            if(!/(auto|scroll|overlay)/.test(s.overflowX)||e.scrollWidth<=e.clientWidth+1)return false;
+            return sx<0?e.scrollLeft>0:e.scrollLeft+e.clientWidth<e.scrollWidth-1;
+          }
+          for(var e=document.elementFromPoint(x,y);e&&e!==document.documentElement;e=e.parentElement){
+            if(room(e)){e.scrollBy({left:dx,top:dy,behavior:'instant'});return true;}
+          }
+          var p=document.scrollingElement||document.documentElement,t=p.scrollTop,l=p.scrollLeft;
+          window.scrollBy({left:dx,top:dy,behavior:'instant'});
+          return p.scrollTop!==t||p.scrollLeft!==l;
+        }"""
     }
 
     private class PointerView(context: Context) : View(context) {

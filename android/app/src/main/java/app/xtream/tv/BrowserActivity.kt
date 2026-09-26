@@ -296,6 +296,16 @@ class BrowserActivity : Activity() {
         optionsBtn.setOnKeyListener(dpadDownToWeb)
         save.setOnKeyListener(dpadDownToWeb)
         pointer = ScreenPointer(this)
+        pointer.topInset = {
+            val bar = chrome.parent as View
+            if (chrome.visibility == View.VISIBLE) {
+                val box = IntArray(2)
+                bar.getLocationInWindow(box)
+                box[1] + bar.height
+            } else {
+                0
+            }
+        }
         pointer.bind(findViewById(R.id.nav_mode))
         pointer.attach()
 
@@ -430,7 +440,10 @@ class BrowserActivity : Activity() {
         if (pointer.handle(event)) return true
         if (event.action == KeyEvent.ACTION_DOWN && event.keyCode == KeyEvent.KEYCODE_DPAD_UP) {
             val atTop = web.scrollY <= 8
-            if (chrome.visibility != View.VISIBLE || (web.hasFocus() && atTop)) {
+            // Holding Up always reaches the top bar, even when a video frame or a
+            // page column has trapped the remote's focus.
+            val held = event.repeatCount >= UP_HOLD_REPEATS
+            if (chrome.visibility != View.VISIBLE || (web.hasFocus() && (atTop || held))) {
                 revealChrome()
                 return true
             }
@@ -439,8 +452,11 @@ class BrowserActivity : Activity() {
     }
 
     private fun revealChrome() {
+        // A video that played inside the page (not a real fullscreen player) must
+        // hand the screen back, or the Cursor switch and MENU stay locked out.
+        if (customView == null && isVideoFullscreen) exitVideo()
         chrome.visibility = View.VISIBLE
-        chrome.bringToFront()
+        (chrome.parent as View).bringToFront()
         findViewById<Button>(R.id.home).requestFocus()
     }
 
@@ -657,6 +673,7 @@ class BrowserActivity : Activity() {
 
     companion object {
         const val EXTRA_URL = "url"
+        private const val UP_HOLD_REPEATS = 6
         private const val CHROME_AGENT =
             "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.200 Mobile Safari/537.36"
         private const val PAGE_HOOK = """
