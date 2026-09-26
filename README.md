@@ -6,8 +6,8 @@ Living-room browser. The web app in this repo is the preview. The installable An
 
 Two sideloadable builds are published on every push to `main`:
 
-- [xtream-tv.apk](https://github.com/admin-xtinex/xtream/releases/download/v2.7.1/xtream-tv.apk) for Android TV (landscape, TV launcher)
-- [xtream-mobile.apk](https://github.com/admin-xtinex/xtream/releases/download/v2.7.1/xtream-mobile.apk) for phones
+- [xtream-tv.apk](https://github.com/admin-xtinex/xtream/releases/download/v2.7.2/xtream-tv.apk) for Android TV (landscape, TV launcher)
+- [xtream-mobile.apk](https://github.com/admin-xtinex/xtream/releases/download/v2.7.2/xtream-mobile.apk) for phones
 
 Install with `adb install -r xtream-tv.apk` or `adb install -r xtream-mobile.apk`. The package names are different, so both can be installed on the same device. If a Thomson TV says the app is not installed, uninstall any older Xtream first, then install 2.5.0. That build is a normal release APK with the signature those TVs accept.
 

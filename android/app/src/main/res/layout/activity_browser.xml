@@ -114,7 +114,8 @@
                 android:text="@string/video"
                 android:textAllCaps="false"
                 android:textColor="#F4F7FF"
-                android:textSize="14sp" />
+                android:textSize="14sp"
+                android:visibility="gone" />
 
             <Button
                 android:id="@+id/save"

@@ -51,6 +51,8 @@ class BrowserActivity : Activity() {
     private lateinit var pointer: ScreenPointer
     private var webGone = false
     private var feedback: android.widget.Toast? = null
+    // Player Options only make sense once a video has started on this page.
+    private lateinit var videoButton: Button
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -265,6 +267,9 @@ class BrowserActivity : Activity() {
                     return
                 }
                 view.evaluateJavascript(PAGE_HOOK, null)
+                // A new page has no video yet: leave player mode and hide Player Options.
+                if (customView == null && isVideoFullscreen) exitVideo()
+                videoButton.visibility = View.GONE
                 showLoad()
             }
 
@@ -304,6 +309,7 @@ class BrowserActivity : Activity() {
             refreshSave()
         }
         val optionsBtn = findViewById<Button>(R.id.video)
+        videoButton = optionsBtn
         optionsBtn.text = getString(R.string.video)
         optionsBtn.setOnClickListener {
             showPlayerOptionsMenu()
@@ -736,6 +742,7 @@ class BrowserActivity : Activity() {
         @JavascriptInterface
         fun onVideoPlay() {
             runOnUiThread {
+                videoButton.visibility = View.VISIBLE
                 // Already showing the player: a resume or seek is not a new start.
                 if (customView != null || isVideoFullscreen) return@runOnUiThread
                 chrome.visibility = View.GONE
