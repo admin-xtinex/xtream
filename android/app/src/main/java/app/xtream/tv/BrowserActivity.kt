@@ -86,8 +86,7 @@ class BrowserActivity : Activity() {
         web.settings.javaScriptEnabled = true
         web.settings.domStorageEnabled = true
         web.settings.mediaPlaybackRequiresUserGesture = false
-        // A phone identity gets phone players that start at 360p, so the TV presents as desktop Chrome.
-        web.settings.userAgentString = if (isTv) desktopAgent() else CHROME_AGENT
+        web.settings.userAgentString = CHROME_AGENT
         web.settings.useWideViewPort = true
         web.settings.loadWithOverviewMode = true
         web.settings.setSupportZoom(true)
@@ -349,16 +348,6 @@ class BrowserActivity : Activity() {
         titleView.text = start
         web.loadUrl(start)
         web.requestFocus()
-    }
-
-    /** Desktop Chrome identity carrying the real engine version. */
-    private fun desktopAgent(): String {
-        val engine = try {
-            Regex("Chrome/[0-9.]+").find(android.webkit.WebSettings.getDefaultUserAgent(this))?.value
-        } catch (_: Exception) {
-            null
-        } ?: "Chrome/131.0.0.0"
-        return "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) $engine Safari/537.36"
     }
 
     private fun showLoad() {
