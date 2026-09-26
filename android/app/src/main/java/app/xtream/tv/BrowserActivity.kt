@@ -877,24 +877,30 @@ class BrowserActivity : Activity() {
                   }
                   return idx;
                 }
-                function applyHls(h){
+                // On a new stream set where playback starts; on a later change switch right away.
+                // startLevel keeps adaptive switching on, which nextLevel/currentLevel would turn off.
+                function applyHls(h, starting){
                   try {
                     var levels = h.levels || [];
                     var idx = pick(levels);
                     if (idx < 0) {
                       h.config.minAutoBitrate = 0;
-                      h.currentLevel = -1;
+                      if (starting) h.startLevel = -1; else h.currentLevel = -1;
                       return;
                     }
                     h.autoLevelCapping = -1;
                     if (window.__xtreamQuality === 'best') {
                       var floor = levels[floorIndex(levels, idx)];
                       h.config.minAutoBitrate = floor && floor.bitrate ? floor.bitrate - 1 : 0;
-                      h.currentLevel = -1;
-                      h.nextLevel = idx;
+                      if (starting) h.startLevel = idx; else h.currentLevel = -1;
                     } else {
                       h.config.minAutoBitrate = 0;
-                      h.currentLevel = idx;
+                      if (starting) {
+                        h.startLevel = idx;
+                        h.loadLevel = idx;
+                      } else {
+                        h.currentLevel = idx;
+                      }
                     }
                   } catch (e) {}
                 }
@@ -911,7 +917,7 @@ class BrowserActivity : Activity() {
                     hlsList.push(h);
                     try {
                       var ev = (H.Events && H.Events.MANIFEST_PARSED) || 'hlsManifestParsed';
-                      h.on(ev, function(){ applyHls(h); });
+                      h.on(ev, function(){ applyHls(h, true); });
                     } catch (e) {}
                     return h;
                   };
@@ -983,7 +989,7 @@ class BrowserActivity : Activity() {
                 }
                 window.__xtreamApplyQuality = function(next){
                   if (next) window.__xtreamQuality = String(next);
-                  hlsList.forEach(applyHls);
+                  if (next) hlsList.forEach(function(h){ applyHls(h, false); });
                   applyJw();
                   applyVideoJs();
                   applyYouTube();
