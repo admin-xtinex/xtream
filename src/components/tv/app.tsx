@@ -555,7 +555,7 @@ function PlayerChrome(props: {
       <Player
         {...props}
         hideControls={props.hideControls}
-        key={`${props.url}:${show ? "on" : "on"}`}
+        key={`${props.url}:${show ? "on" : "off"}`}
       />
     </div>
   );

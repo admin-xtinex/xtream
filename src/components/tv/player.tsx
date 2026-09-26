@@ -7,9 +7,7 @@ import {
   Play,
   RotateCcw,
   RotateCw,
-  Sliders,
   Star,
-  Tv,
   Volume2,
   VolumeX,
   X,
@@ -50,21 +48,44 @@ export function Player({
   const videoRef = useRef<HTMLVideoElement>(null);
   const seekRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const hlsRecoveriesRef = useRef({ network: 0, media: 0 });
   const [fatal, setFatal] = useState<string | null>(format === "dash" ? "dash" : null);
   const [playing, setPlaying] = useState(false);
   const [time, setTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [muted, setMuted] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
+  const [buffering, setBuffering] = useState(false);
   const [chromeOn, setChromeOn] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+
+  const getFullscreenElement = () => {
+    if (typeof document === "undefined") return null;
+    const doc = document as Document & {
+      webkitFullscreenElement?: Element | null;
+      mozFullScreenElement?: Element | null;
+      msFullscreenElement?: Element | null;
+    };
+    return (
+      document.fullscreenElement ||
+      doc.webkitFullscreenElement ||
+      doc.mozFullScreenElement ||
+      doc.msFullscreenElement ||
+      null
+    );
+  };
 
   useEffect(() => {
     setFatal(format === "dash" ? "dash" : null);
     setTime(0);
     setDuration(0);
     setPlaying(false);
+    setMuted(false);
+    setPlaybackRate(1);
+    setBuffering(false);
     setChromeOn(true);
+    setAttempt(0);
   }, [url, format]);
 
   useEffect(() => {
@@ -72,24 +93,43 @@ export function Player({
     if (!video || format === "dash") return;
     let dead = false;
     let hls: { destroy: () => void } | null = null;
+    let usingHlsJs = false;
+    hlsRecoveriesRef.current = { network: 0, media: 0 };
 
     const onError = () => {
-      if (!dead) setFatal("play");
+      if (dead || usingHlsJs) return;
+      setFatal("play");
     };
     const onTime = () => setTime(video.currentTime || 0);
     const onMeta = () => setDuration(video.duration || 0);
-    const onPlay = () => setPlaying(true);
+    const onPlay = () => {
+      setPlaying(true);
+      setBuffering(false);
+      hlsRecoveriesRef.current = { network: 0, media: 0 };
+    };
     const onPause = () => setPlaying(false);
+    const onWaiting = () => setBuffering(!video.paused);
+    const onCanPlay = () => {
+      setBuffering(false);
+    };
+    const onVolume = () => setMuted(video.muted);
 
     video.addEventListener("error", onError);
     video.addEventListener("timeupdate", onTime);
     video.addEventListener("durationchange", onMeta);
+    video.addEventListener("loadedmetadata", onMeta);
     video.addEventListener("play", onPlay);
     video.addEventListener("pause", onPause);
+    video.addEventListener("waiting", onWaiting);
+    video.addEventListener("stalled", onWaiting);
+    video.addEventListener("canplay", onCanPlay);
+    video.addEventListener("seeked", onCanPlay);
+    video.addEventListener("volumechange", onVolume);
 
     const start = async () => {
       const nativeHls = video.canPlayType("application/vnd.apple.mpegurl");
       if (format === "hls" && nativeHls === "") {
+        usingHlsJs = true;
         const { default: Hls } = await import("hls.js");
         if (dead) return;
         if (!Hls.isSupported()) {
@@ -101,10 +141,30 @@ export function Player({
         instance.loadSource(url);
         instance.attachMedia(video);
         instance.on(Hls.Events.ERROR, (_event, data) => {
-          if (!data.fatal || dead) return;
+          if (dead || !data.fatal) return;
+          if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+            if (hlsRecoveriesRef.current.network >= 2) {
+              setFatal("play");
+              return;
+            }
+            hlsRecoveriesRef.current.network += 1;
+            setBuffering(true);
+            instance.startLoad();
+            return;
+          }
+          if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+            if (hlsRecoveriesRef.current.media >= 2) {
+              setFatal("play");
+              return;
+            }
+            hlsRecoveriesRef.current.media += 1;
+            instance.recoverMediaError();
+            return;
+          }
           setFatal("play");
         });
         instance.on(Hls.Events.MANIFEST_PARSED, () => {
+          hlsRecoveriesRef.current = { network: 0, media: 0 };
           if (!dead) void video.play().catch(() => setPlaying(false));
         });
         return;
@@ -119,13 +179,19 @@ export function Player({
       video.removeEventListener("error", onError);
       video.removeEventListener("timeupdate", onTime);
       video.removeEventListener("durationchange", onMeta);
+      video.removeEventListener("loadedmetadata", onMeta);
       video.removeEventListener("play", onPlay);
       video.removeEventListener("pause", onPause);
+      video.removeEventListener("waiting", onWaiting);
+      video.removeEventListener("stalled", onWaiting);
+      video.removeEventListener("canplay", onCanPlay);
+      video.removeEventListener("seeked", onCanPlay);
+      video.removeEventListener("volumechange", onVolume);
       hls?.destroy();
       video.removeAttribute("src");
       video.load();
     };
-  }, [url, format]);
+  }, [url, format, attempt]);
 
   useEffect(() => {
     const el = seekRef.current;
@@ -157,6 +223,24 @@ export function Player({
     return () => window.clearTimeout(id);
   }, [hideControls, playing, chromeOn]);
 
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const onFullscreenChange = () => {
+      setIsFullscreen(Boolean(getFullscreenElement()));
+    };
+    onFullscreenChange();
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    document.addEventListener("webkitfullscreenchange", onFullscreenChange);
+    document.addEventListener("mozfullscreenchange", onFullscreenChange);
+    document.addEventListener("MSFullscreenChange", onFullscreenChange);
+    return () => {
+      document.removeEventListener("fullscreenchange", onFullscreenChange);
+      document.removeEventListener("webkitfullscreenchange", onFullscreenChange);
+      document.removeEventListener("mozfullscreenchange", onFullscreenChange);
+      document.removeEventListener("MSFullscreenChange", onFullscreenChange);
+    };
+  }, []);
+
   function toggle() {
     const video = videoRef.current;
     if (!video) return;
@@ -182,12 +266,10 @@ export function Player({
   }
 
   function toggleFullscreen() {
-    if (!document.fullscreenElement) {
+    if (!getFullscreenElement()) {
       void containerRef.current?.requestFullscreen?.();
-      setIsFullscreen(true);
     } else {
       void document.exitFullscreen?.();
-      setIsFullscreen(false);
     }
   }
 
@@ -217,13 +299,35 @@ export function Player({
         <p className="max-w-md text-sm text-muted">
           Xtream plays direct HTML5 and HLS video files. DRM protected and token-expired media stay closed.
         </p>
-        <TvButton
-          primary
-          onClick={onBack}
-          className="px-8 py-3 rounded-xl font-bold text-sm"
-        >
-          Return to Browser
-        </TvButton>
+        <div className="flex flex-wrap items-center justify-center gap-3">
+          {fatal !== "dash" ? (
+            <TvButton
+              primary
+              onClick={() => {
+                const video = videoRef.current;
+                if (video) {
+                  video.currentTime = 0;
+                  video.pause();
+                }
+                setTime(0);
+                setDuration(0);
+                setPlaying(false);
+                setFatal(null);
+                setBuffering(true);
+                setAttempt((n) => n + 1);
+              }}
+              className="px-8 py-3 rounded-xl font-bold text-sm"
+            >
+              Retry Stream
+            </TvButton>
+          ) : null}
+          <TvButton
+            onClick={onBack}
+            className="px-8 py-3 rounded-xl font-bold text-sm"
+          >
+            Return to Browser
+          </TvButton>
+        </div>
       </div>
     );
   }
@@ -242,6 +346,17 @@ export function Player({
         playsInline
         preload="metadata"
       />
+      {buffering ? (
+        <div
+          role="status"
+          aria-live="polite"
+          className="pointer-events-none absolute inset-x-0 top-4 z-20 flex justify-center"
+        >
+          <span className="rounded-full bg-black/80 px-3 py-1 text-xs font-semibold text-fg">
+            Buffering…
+          </span>
+        </div>
+      ) : null}
 
       {/* Chrome Overlay */}
       {chromeOn ? (

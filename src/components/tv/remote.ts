@@ -19,7 +19,7 @@ function visible(el: HTMLElement): boolean {
 }
 
 export function focusables(): HTMLElement[] {
-  return [...document.querySelectorAll<HTMLElement>("[data-tv]")].filter(visible);
+  return [...document.querySelectorAll<HTMLElement>("#focus-root [data-tv]")].filter(visible);
 }
 
 function syncFocusClass(el: HTMLElement | null) {
@@ -96,12 +96,34 @@ export function useRemote(opts: RemoteOpts) {
     const onKey = (event: KeyboardEvent) => {
       const o = ref.current;
       if (event.metaKey || event.ctrlKey || event.altKey) return;
+      const code = event.key.codePointAt(0) ?? 0;
+      const printable = event.key.length === 1 && code >= 0x20 && code !== 0x7f;
+      const active = document.activeElement;
+      const textInput =
+        active instanceof HTMLInputElement &&
+        !["button", "checkbox", "color", "file", "image", "radio", "range", "reset", "submit"].includes(
+          active.type,
+        );
+      const editing =
+        active instanceof HTMLElement &&
+        (active.isContentEditable || active instanceof HTMLTextAreaElement || textInput);
+      if (
+        editing &&
+        active instanceof HTMLElement &&
+        !active.hasAttribute("data-tv-seek") &&
+        (event.key in DIRS ||
+          event.key === "Backspace" ||
+          event.key === "Delete" ||
+          event.key === " " ||
+          printable)
+      ) {
+        return;
+      }
       const chromeKeys = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Enter", " "];
       if (chromeKeys.includes(event.key) && o.onChrome()) {
         event.preventDefault();
         return;
       }
-      const active = document.activeElement;
       if (
         (event.key === "ArrowLeft" || event.key === "ArrowRight") &&
         active instanceof HTMLElement &&
@@ -129,7 +151,7 @@ export function useRemote(opts: RemoteOpts) {
         else o.onBack();
         return;
       }
-      if (o.onText && event.key.length === 1 && event.key >= " " && event.key <= "~") {
+      if (o.onText && printable) {
         event.preventDefault();
         o.onText(event.key);
       }
