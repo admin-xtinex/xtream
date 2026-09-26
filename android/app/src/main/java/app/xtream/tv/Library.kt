@@ -16,13 +16,13 @@ object Library {
 
     fun bookmarks(context: Context): List<Entry> {
         val sp = context.getSharedPreferences(prefs, Context.MODE_PRIVATE)
-        if (!sp.getBoolean("seeded_ogomovies_v1", false)) {
+        if (!sp.getBoolean("seeded_ogomovies_v2", false)) {
             val current = read(context, bookmarksKey).toMutableList()
             if (current.none { it.url == defaultBookmarkUrl || it.url == "https://ogomovies2.com.pk" }) {
                 current.add(0, Entry(defaultBookmarkUrl, defaultBookmarkTitle))
                 write(context, bookmarksKey, current)
             }
-            sp.edit().putBoolean("seeded_ogomovies_v1", true).apply()
+            sp.edit().putBoolean("seeded_ogomovies_v2", true).apply()
         }
         return read(context, bookmarksKey)
     }

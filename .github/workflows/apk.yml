@@ -101,11 +101,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          notes="Video Quality lists the qualities the video really has, and a choice changes the stream itself. Player Options appears only once a video plays. The top bar no longer covers a site's own menu and search. Video plays at the best quality by default: 1080p minimum when the stream has it, up to 4K. The TV now loads desktop sites instead of phone ones. Pick a fixed quality in Options, Video Quality."
-          if gh release view v2.7.3 >/dev/null 2>&1; then
-            gh release upload v2.7.3 xtream-tv.apk xtream-mobile.apk --clobber
+          notes="OgoMovies is back in Bookmarks. Video Quality lists the qualities the video really has, and a choice changes the stream itself. Player Options appears only once a video plays. The top bar no longer covers a site's own menu and search. Video plays at the best quality by default: 1080p minimum when the stream has it, up to 4K. The TV now loads desktop sites instead of phone ones. Pick a fixed quality in Options, Video Quality."
+          if gh release view v2.7.4 >/dev/null 2>&1; then
+            gh release upload v2.7.4 xtream-tv.apk xtream-mobile.apk --clobber
           else
-            gh release create v2.7.3 xtream-tv.apk xtream-mobile.apk \
-              --title "Xtream 2.7.3" \
+            gh release create v2.7.4 xtream-tv.apk xtream-mobile.apk \
+              --title "Xtream 2.7.4" \
               --notes "$notes"
           fi
