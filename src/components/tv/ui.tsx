@@ -156,6 +156,7 @@ export function DeviceSwitcherBar({
       <div className="flex items-center gap-1.5 bg-surface-2/80 p-1 rounded-xl border border-line/60">
         <button
           type="button"
+          data-tv=""
           onClick={() => onModeChange("tv")}
           className={clsx(
             "flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-semibold transition text-[11px]",
@@ -171,6 +172,7 @@ export function DeviceSwitcherBar({
 
         <button
           type="button"
+          data-tv=""
           onClick={() => onModeChange("mobile")}
           className={clsx(
             "flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-semibold transition text-[11px]",
@@ -186,6 +188,7 @@ export function DeviceSwitcherBar({
 
         <button
           type="button"
+          data-tv=""
           onClick={() => onModeChange("auto")}
           className={clsx(
             "flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-semibold transition text-[11px]",
@@ -202,6 +205,7 @@ export function DeviceSwitcherBar({
         {mode === "mobile" && (
           <button
             type="button"
+            data-tv=""
             onClick={onOrientationToggle}
             className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold text-muted hover:text-fg hover:bg-surface/60 border-l border-line/40 ml-1 transition"
             title="Rotate phone orientation"
@@ -215,6 +219,7 @@ export function DeviceSwitcherBar({
       {/* Virtual Remote Controller Toggle */}
       <button
         type="button"
+        data-tv=""
         onClick={onVirtualRemoteToggle}
         className={clsx(
           "flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[11px] font-semibold transition",
@@ -250,6 +255,7 @@ export function MobileBottomDock({
     >
       <button
         type="button"
+        data-tv=""
         onClick={() => onNavigate("home")}
         className={clsx(
           "flex flex-col items-center gap-1 px-3 py-1 rounded-xl transition",
@@ -262,6 +268,7 @@ export function MobileBottomDock({
 
       <button
         type="button"
+        data-tv=""
         onClick={() => onNavigate("bookmarks")}
         className={clsx(
           "relative flex flex-col items-center gap-1 px-3 py-1 rounded-xl transition",
@@ -279,6 +286,7 @@ export function MobileBottomDock({
 
       <button
         type="button"
+        data-tv=""
         onClick={() => onNavigate("history")}
         className={clsx(
           "flex flex-col items-center gap-1 px-3 py-1 rounded-xl transition",
@@ -291,6 +299,7 @@ export function MobileBottomDock({
 
       <button
         type="button"
+        data-tv=""
         onClick={() => onNavigate("settings")}
         className={clsx(
           "flex flex-col items-center gap-1 px-3 py-1 rounded-xl transition",
