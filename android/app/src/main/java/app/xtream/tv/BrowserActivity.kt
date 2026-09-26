@@ -46,6 +46,8 @@ class BrowserActivity : Activity() {
     @Volatile
     private var pageHost: String = ""
     private var isVideoFullscreen: Boolean = false
+    // TV two-column navigation: tracks whether D-pad is scrolling the right sidebar
+    private var inSidebar: Boolean = false
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -441,22 +443,95 @@ class BrowserActivity : Activity() {
                 if (chrome.visibility != View.VISIBLE) {
                     // Show nav bar when hidden (e.g. video OSD mode)
                     chrome.visibility = View.VISIBLE
+                    inSidebar = false
                     findViewById<Button>(R.id.home).requestFocus()
                     return true
-                } else if (web.scrollY == 0) {
-                    // At top of page: move focus to nav bar
+                } else if (web.scrollY == 0 && !inSidebar) {
+                    // At top of main column: move focus to nav bar
+                    inSidebar = false
                     findViewById<Button>(R.id.home).requestFocus()
                     return true
                 } else {
-                    // Scroll page up — breaks out of iframe focus trap
-                    web.evaluateJavascript("window.scrollBy({top:-300,behavior:'smooth'})", null)
+                    // Scroll the active column up
+                    val sidebarJs = """
+                        (function(){
+                          var threshold=window.innerWidth*0.55;
+                          var s=[...document.querySelectorAll('div,section,aside,article')]
+                            .find(function(e){
+                              var r=e.getBoundingClientRect();
+                              return r.left>=threshold && r.height>200;
+                            });
+                          if(s)s.scrollBy({top:-300,behavior:'smooth'});
+                          else window.scrollBy({top:-300,behavior:'smooth'});
+                        })()
+                    """.trimIndent()
+                    val js = if (inSidebar) sidebarJs else "window.scrollBy({top:-300,behavior:'smooth'})"
+                    web.evaluateJavascript(js, null)
                     return true
                 }
             }
             KeyEvent.KEYCODE_DPAD_DOWN -> {
-                // Always scroll down — breaks focus trap from video iframe
-                web.evaluateJavascript("window.scrollBy({top:300,behavior:'smooth'})", null)
+                // Scroll the active column down — breaks iframe focus trap
+                val sidebarJs = """
+                    (function(){
+                      var threshold=window.innerWidth*0.55;
+                      var s=[...document.querySelectorAll('div,section,aside,article')]
+                        .find(function(e){
+                          var r=e.getBoundingClientRect();
+                          return r.left>=threshold && r.height>200;
+                        });
+                      if(s)s.scrollBy({top:300,behavior:'smooth'});
+                      else window.scrollBy({top:300,behavior:'smooth'});
+                    })()
+                """.trimIndent()
+                val js = if (inSidebar) sidebarJs else "window.scrollBy({top:300,behavior:'smooth'})"
+                web.evaluateJavascript(js, null)
                 return true
+            }
+            KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                // Switch focus to right sidebar (Genres / Most Viewed)
+                if (!inSidebar) {
+                    inSidebar = true
+                    web.evaluateJavascript(
+                        """
+                        (function(){
+                          var threshold=window.innerWidth*0.55;
+                          var s=[...document.querySelectorAll('div,section,aside,article')]
+                            .find(function(e){
+                              var r=e.getBoundingClientRect();
+                              return r.left>=threshold && r.height>200;
+                            });
+                          if(s){
+                            s.style.outline='2px solid #1e90ff';
+                            s.scrollIntoView({behavior:'smooth',block:'start'});
+                          }
+                        })()
+                        """.trimIndent(),
+                        null
+                    )
+                    return true
+                }
+            }
+            KeyEvent.KEYCODE_DPAD_LEFT -> {
+                // Switch focus back to main content column
+                if (inSidebar) {
+                    inSidebar = false
+                    web.evaluateJavascript(
+                        """
+                        (function(){
+                          var threshold=window.innerWidth*0.55;
+                          var s=[...document.querySelectorAll('div,section,aside,article')]
+                            .find(function(e){
+                              var r=e.getBoundingClientRect();
+                              return r.left>=threshold && r.height>200;
+                            });
+                          if(s)s.style.outline='';
+                        })()
+                        """.trimIndent(),
+                        null
+                    )
+                    return true
+                }
             }
         }
         return super.onKeyDown(keyCode, event)
