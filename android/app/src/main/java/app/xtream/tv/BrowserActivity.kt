@@ -439,13 +439,24 @@ class BrowserActivity : Activity() {
             }
             KeyEvent.KEYCODE_DPAD_UP -> {
                 if (chrome.visibility != View.VISIBLE) {
+                    // Show nav bar when hidden (e.g. video OSD mode)
                     chrome.visibility = View.VISIBLE
                     findViewById<Button>(R.id.home).requestFocus()
                     return true
-                } else if (web.scrollY == 0 && web.hasFocus()) {
+                } else if (web.scrollY == 0) {
+                    // At top of page: move focus to nav bar
                     findViewById<Button>(R.id.home).requestFocus()
                     return true
+                } else {
+                    // Scroll page up — breaks out of iframe focus trap
+                    web.evaluateJavascript("window.scrollBy({top:-300,behavior:'smooth'})", null)
+                    return true
                 }
+            }
+            KeyEvent.KEYCODE_DPAD_DOWN -> {
+                // Always scroll down — breaks focus trap from video iframe
+                web.evaluateJavascript("window.scrollBy({top:300,behavior:'smooth'})", null)
+                return true
             }
         }
         return super.onKeyDown(keyCode, event)
