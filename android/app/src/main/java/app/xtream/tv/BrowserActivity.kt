@@ -50,6 +50,7 @@ class BrowserActivity : Activity() {
     private var isVideoFullscreen: Boolean = false
     private lateinit var pointer: ScreenPointer
     private var webGone = false
+    private var feedback: android.widget.Toast? = null
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -393,14 +394,23 @@ class BrowserActivity : Activity() {
         save.setTextColor(if (saved) 0xFF041018.toInt() else 0xFFF4F7FF.toInt())
     }
 
+    /** Sends a command to the page's video, including one nested in frames. */
+    private fun player(cmd: String, arg: String = "null") {
+        web.evaluateJavascript("window.__xtreamPlayer && window.__xtreamPlayer('$cmd', $arg)", null)
+    }
+
+    private fun flash(text: String) {
+        feedback?.cancel()
+        feedback = android.widget.Toast.makeText(this, text, android.widget.Toast.LENGTH_SHORT).also { it.show() }
+    }
+
     private fun showPlayerOptionsMenu() {
-        web.evaluateJavascript("window.__xtreamToggleOptions && window.__xtreamToggleOptions()", null)
         val items = arrayOf(
             "⏯ Play / Pause",
             "⏪ Rewind 10s",
             "⏩ Forward 10s",
             "⏭ Next Episode / Server",
-            "📺 Video Quality (Best, 1080p, 720p...)",
+            "📺 Video Quality: ${VideoQuality.label(this)}",
             "⚡ Playback Speed",
             "📐 Aspect Ratio",
         )
@@ -408,18 +418,18 @@ class BrowserActivity : Activity() {
             .setTitle("Player Options")
             .setItems(items) { _, which ->
                 when (which) {
-                    0 -> web.evaluateJavascript("window.__xtreamTogglePlay && window.__xtreamTogglePlay()", null)
+                    0 -> player("toggle")
                     1 -> {
-                        web.evaluateJavascript("window.__xtreamNudge && window.__xtreamNudge(-10)", null)
-                        android.widget.Toast.makeText(this, "⏪ Rewound 10s", android.widget.Toast.LENGTH_SHORT).show()
+                        player("seek", "-10")
+                        flash("⏪ 10s")
                     }
                     2 -> {
-                        web.evaluateJavascript("window.__xtreamNudge && window.__xtreamNudge(10)", null)
-                        android.widget.Toast.makeText(this, "⏩ Forwarded 10s", android.widget.Toast.LENGTH_SHORT).show()
+                        player("seek", "10")
+                        flash("⏩ 10s")
                     }
                     3 -> {
-                        web.evaluateJavascript("window.__xtreamNext && window.__xtreamNext()", null)
-                        android.widget.Toast.makeText(this, "⏭ Next episode / server", android.widget.Toast.LENGTH_SHORT).show()
+                        player("next")
+                        flash("⏭ Next episode / server")
                     }
                     4 -> showQualityDialog()
                     5 -> showSpeedDialog()
@@ -439,9 +449,8 @@ class BrowserActivity : Activity() {
             .setSingleChoiceItems(labels, current) { dialog, which ->
                 val q = values[which]
                 VideoQuality.set(this, q)
-                web.evaluateJavascript("window.__xtreamApplyQuality && window.__xtreamApplyQuality('$q')", null)
-                web.evaluateJavascript("window.__xtreamSetQuality && window.__xtreamSetQuality('${if (q == "best") "1080" else q}')", null)
-                android.widget.Toast.makeText(this, "Quality: ${labels[which]}", android.widget.Toast.LENGTH_SHORT).show()
+                player("quality", "'$q'")
+                flash("Quality: ${labels[which]}")
                 dialog.dismiss()
             }
             .show()
@@ -451,11 +460,10 @@ class BrowserActivity : Activity() {
         val speeds = arrayOf("0.75x", "1.0x (Normal)", "1.25x", "1.5x", "2.0x")
         val values = arrayOf("0.75", "1.0", "1.25", "1.5", "2.0")
         android.app.AlertDialog.Builder(this)
-            .setTitle("Select Playback Speed")
+            .setTitle("Playback Speed")
             .setItems(speeds) { _, which ->
-                val s = values[which]
-                web.evaluateJavascript("if (window.__xtreamVideo) window.__xtreamVideo.playbackRate = $s;", null)
-                android.widget.Toast.makeText(this, "Speed: ${speeds[which]}", android.widget.Toast.LENGTH_SHORT).show()
+                player("speed", values[which])
+                flash("Speed: ${speeds[which]}")
             }
             .show()
     }
@@ -464,13 +472,39 @@ class BrowserActivity : Activity() {
         val aspects = arrayOf("Fit (Contain)", "Fill (Cover)", "Stretch")
         val values = arrayOf("contain", "cover", "fill")
         android.app.AlertDialog.Builder(this)
-            .setTitle("Select Aspect Ratio")
+            .setTitle("Aspect Ratio")
             .setItems(aspects) { _, which ->
-                val a = values[which]
-                web.evaluateJavascript("if (window.__xtreamVideo) window.__xtreamVideo.style.objectFit = '$a';", null)
-                android.widget.Toast.makeText(this, "Aspect: ${aspects[which]}", android.widget.Toast.LENGTH_SHORT).show()
+                player("fit", "'${values[which]}'")
+                flash("Aspect: ${aspects[which]}")
             }
             .show()
+    }
+
+    /**
+     * While a video plays, the remote drives the player directly: the page's own
+     * controls can't be reached with arrows, and in fullscreen only the video shows.
+     */
+    private fun handlePlayerKey(event: KeyEvent): Boolean {
+        if (customView == null && !isVideoFullscreen) return false
+        if (chrome.visibility == View.VISIBLE && chrome.findFocus() != null) return false
+        val code = event.keyCode
+        val keys = code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER ||
+            code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT ||
+            code == KeyEvent.KEYCODE_DPAD_DOWN
+        if (!keys) return false
+        if (event.action != KeyEvent.ACTION_DOWN) return true
+        when (code) {
+            KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                // Holding an arrow speeds seeking up: 10s steps, then 30s.
+                val step = if (event.repeatCount >= SEEK_FAST_REPEATS) 30 else 10
+                val back = code == KeyEvent.KEYCODE_DPAD_LEFT
+                player("seek", if (back) "-$step" else "$step")
+                flash(if (back) "⏪ ${step}s" else "⏩ ${step}s")
+            }
+            KeyEvent.KEYCODE_DPAD_DOWN -> if (event.repeatCount == 0) showPlayerOptionsMenu()
+            else -> if (event.repeatCount == 0) player("toggle")
+        }
+        return true
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
@@ -480,6 +514,7 @@ class BrowserActivity : Activity() {
             return true
         }
         if (pointer.handle(event)) return true
+        if (handlePlayerKey(event)) return true
         if (event.action == KeyEvent.ACTION_DOWN && event.keyCode == KeyEvent.KEYCODE_DPAD_UP) {
             val atTop = web.scrollY <= 8
             // Holding Up always reaches the top bar, even when a video frame or a
@@ -505,19 +540,19 @@ class BrowserActivity : Activity() {
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         when (keyCode) {
             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.KEYCODE_MEDIA_PAUSE -> {
-                web.evaluateJavascript("window.__xtreamTogglePlay && window.__xtreamTogglePlay()", null)
+                player("toggle")
                 return true
             }
             KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
-                web.evaluateJavascript("window.__xtreamNudge && window.__xtreamNudge(10)", null)
+                player("seek", "10")
                 return true
             }
             KeyEvent.KEYCODE_MEDIA_REWIND -> {
-                web.evaluateJavascript("window.__xtreamNudge && window.__xtreamNudge(-10)", null)
+                player("seek", "-10")
                 return true
             }
             KeyEvent.KEYCODE_MEDIA_NEXT -> {
-                web.evaluateJavascript("window.__xtreamNext && window.__xtreamNext()", null)
+                player("next")
                 return true
             }
             KeyEvent.KEYCODE_MENU -> {
@@ -693,8 +728,15 @@ class BrowserActivity : Activity() {
         fun quality(): String = VideoQuality.get(this@BrowserActivity)
 
         @JavascriptInterface
+        fun setQuality(value: String) {
+            if (value in VideoQuality.values) VideoQuality.set(this@BrowserActivity, value)
+        }
+
+        @JavascriptInterface
         fun onVideoPlay() {
             runOnUiThread {
+                // Already showing the player: a resume or seek is not a new start.
+                if (customView != null || isVideoFullscreen) return@runOnUiThread
                 chrome.visibility = View.GONE
                 setImmersiveFullscreen(true)
                 if (::pointer.isInitialized) pointer.setSuppressed(true)
@@ -721,12 +763,75 @@ class BrowserActivity : Activity() {
     companion object {
         const val EXTRA_URL = "url"
         private const val UP_HOLD_REPEATS = 6
+        private const val SEEK_FAST_REPEATS = 4
         private const val CHROME_AGENT =
             "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.200 Mobile Safari/537.36"
         private const val PAGE_HOOK = """
             (function(){
               if (window.__xtreamHook) return;
               window.__xtreamHook = true;
+              // --- Player commands from the remote: reach the video however deep its frame is ---
+              (function(){
+                function localVideo(){
+                  try { return window.__xtreamVideo && window.__xtreamVideo.isConnected ? window.__xtreamVideo : getBestVideo(); } catch (e) { return null; }
+                }
+                function jw(){
+                  try {
+                    if (typeof window.jwplayer !== 'function') return null;
+                    var p = window.jwplayer();
+                    return p && p.getState ? p : null;
+                  } catch (e) { return null; }
+                }
+                function clickNext(){
+                  var list = document.querySelectorAll('[data-server], .server, .btn-server, a[href*="server"], .episode, .next-episode');
+                  for (var i = 0; i < list.length; i++) {
+                    var t = (list[i].textContent || '').toLowerCase();
+                    if (!list[i].classList.contains('active') && (t.indexOf('server') >= 0 || t.indexOf('next') >= 0 || t.indexOf('part') >= 0 || t.indexOf('episode') >= 0)) {
+                      list[i].click();
+                      return true;
+                    }
+                  }
+                  return false;
+                }
+                function run(cmd, arg){
+                  var v = localVideo();
+                  var p = jw();
+                  if (cmd === 'toggle') {
+                    if (p) {
+                      if (p.getState() === 'playing' || p.getState() === 'buffering') p.pause(); else p.play();
+                    } else if (v) {
+                      if (v.paused) { var r = v.play(); if (r && r.catch) r.catch(function(){}); } else v.pause();
+                    }
+                  } else if (cmd === 'seek') {
+                    if (p && p.getPosition) {
+                      p.seek(Math.max(0, p.getPosition() + arg));
+                    } else if (v) {
+                      var end = isFinite(v.duration) ? v.duration : v.currentTime + Math.abs(arg);
+                      v.currentTime = Math.min(end, Math.max(0, v.currentTime + arg));
+                    }
+                  } else if (cmd === 'next') {
+                    if (!clickNext() && v) v.currentTime = Math.min(v.duration || 0, v.currentTime + 60) || v.currentTime;
+                  } else if (cmd === 'speed') {
+                    if (p && p.setPlaybackRate) p.setPlaybackRate(arg);
+                    if (v) v.playbackRate = arg;
+                  } else if (cmd === 'fit') {
+                    if (v) v.style.objectFit = arg;
+                  } else if (cmd === 'quality') {
+                    if (window.__xtreamApplyQuality) window.__xtreamApplyQuality(arg);
+                    return;
+                  }
+                }
+                window.__xtreamPlayer = function(cmd, arg){
+                  try { run(cmd, arg); } catch (e) {}
+                  var frames = document.querySelectorAll('iframe');
+                  for (var i = 0; i < frames.length; i++) {
+                    try { frames[i].contentWindow.postMessage({ action: 'xtream-player', cmd: cmd, arg: arg }, '*'); } catch (e) {}
+                  }
+                };
+                window.addEventListener('message', function(ev){
+                  if (ev && ev.data && ev.data.action === 'xtream-player') window.__xtreamPlayer(ev.data.cmd, ev.data.arg);
+                });
+              })();
               // --- Video quality: aim high instead of the player's cautious low start ---
               (function(){
                 var q = 'best';
@@ -1058,10 +1163,14 @@ class BrowserActivity : Activity() {
                   if (window.__xtreamAds !== false && skipAd(v)) return;
                   var box = v.getBoundingClientRect();
                   if (box.width < 200 && box.height < 120) return;
-                  try {
-                    if (v.webkitEnterFullscreen) v.webkitEnterFullscreen();
-                    else if (v.requestFullscreen) v.requestFullscreen();
-                  } catch (e) {}
+                  // Resuming, seeking or a new source must not restart the fullscreen hand-off.
+                  var already = document.fullscreenElement || document.webkitFullscreenElement;
+                  if (!already) {
+                    try {
+                      if (v.webkitEnterFullscreen) v.webkitEnterFullscreen();
+                      else if (v.requestFullscreen) v.requestFullscreen();
+                    } catch (e) {}
+                  }
                   try { Xtream.onVideoPlay(); } catch (e) {}
                   injectXtreamPlayerOSD();
                 });
@@ -1358,11 +1467,12 @@ class BrowserActivity : Activity() {
                     <div>
                       <div class="xt-sec-title">Video Quality:</div>
                       <div class="xt-pills" id="xt-q-pills">
-                        <button class="xt-pill active" data-q="auto">Auto</button>
+                        <button class="xt-pill" data-q="best">Best</button>
                         <button class="xt-pill" data-q="1080">1080p</button>
                         <button class="xt-pill" data-q="720">720p</button>
                         <button class="xt-pill" data-q="480">480p</button>
                         <button class="xt-pill" data-q="360">360p</button>
+                        <button class="xt-pill" data-q="auto">Auto</button>
                       </div>
                     </div>
                     <div>
@@ -1396,73 +1506,17 @@ class BrowserActivity : Activity() {
                   var closeBtn = document.getElementById('xt-close-modal');
 
                   window.__xtreamTogglePlay = function(){
-                    var v = window.__xtreamVideo || getBestVideo();
-                    if (v) {
-                      try {
-                        if (window.jwplayer && typeof window.jwplayer === 'function') {
-                          var jw = window.jwplayer();
-                          if (jw && typeof jw.play === 'function') {
-                            jw.play();
-                          } else {
-                            if (v.paused) v.play(); else v.pause();
-                          }
-                        } else {
-                          if (v.paused) v.play(); else v.pause();
-                        }
-                      } catch(e) {
-                        if (v.paused) v.play(); else v.pause();
-                      }
-                      showOSD();
-                    }
-                    document.querySelectorAll('iframe').forEach(function(f){
-                      try { f.contentWindow.postMessage('xtream-toggle-play', '*'); } catch(e){}
-                    });
+                    window.__xtreamPlayer('toggle');
+                    showOSD();
                   };
 
                   window.__xtreamNudge = function(delta){
-                    var v = window.__xtreamVideo || getBestVideo();
-                    if (v) {
-                      var cur = v.currentTime || 0;
-                      var dur = v.duration || 999999;
-                      var target = Math.min(dur, Math.max(0, cur + delta));
-                      try {
-                        if (window.jwplayer && typeof window.jwplayer === 'function') {
-                          var jw = window.jwplayer();
-                          if (jw && typeof jw.seek === 'function') {
-                            jw.seek(target);
-                          } else {
-                            v.currentTime = target;
-                          }
-                        } else {
-                          v.currentTime = target;
-                        }
-                      } catch(e) {
-                        v.currentTime = target;
-                      }
-                      showOSD();
-                    }
-                    document.querySelectorAll('iframe').forEach(function(f){
-                      try { f.contentWindow.postMessage({action:'xtream-nudge', delta:delta}, '*'); } catch(e){}
-                    });
+                    window.__xtreamPlayer('seek', delta);
+                    showOSD();
                   };
 
                   window.__xtreamNext = function(){
-                    var servers = Array.from(document.querySelectorAll('[data-server], .server, .btn-server, a[href*="server"], .episode, .next-episode'));
-                    var clicked = false;
-                    for (var i = 0; i < servers.length; i++) {
-                      var txt = (servers[i].textContent || '').toLowerCase();
-                      if (!servers[i].classList.contains('active') && (txt.includes('server') || txt.includes('next') || txt.includes('part') || txt.includes('episode'))) {
-                        servers[i].click();
-                        clicked = true;
-                        break;
-                      }
-                    }
-                    if (!clicked) {
-                      window.__xtreamNudge(60);
-                    }
-                    document.querySelectorAll('iframe').forEach(function(f){
-                      try { f.contentWindow.postMessage('xtream-next', '*'); } catch(e){}
-                    });
+                    window.__xtreamPlayer('next');
                     showOSD();
                   };
 
@@ -1504,51 +1558,8 @@ class BrowserActivity : Activity() {
 
                   window.addEventListener('message', function(ev){
                     if (!ev || !ev.data) return;
-                    if (ev.data === 'xtream-toggle-play') {
-                      var v = window.__xtreamVideo || getBestVideo();
-                      if (v) {
-                        try {
-                          if (window.jwplayer && typeof window.jwplayer === 'function') {
-                            var jw = window.jwplayer();
-                            if (jw && typeof jw.play === 'function') {
-                              jw.play();
-                            } else {
-                              if (v.paused) v.play(); else v.pause();
-                            }
-                          } else {
-                            if (v.paused) v.play(); else v.pause();
-                          }
-                        } catch(e) {
-                          if (v.paused) v.play(); else v.pause();
-                        }
-                        showOSD();
-                      }
-                    } else if (ev.data === 'xtream-toggle-options') {
+                    if (ev.data === 'xtream-toggle-options') {
                       if (modal) { modal.classList.toggle('xt-open'); showOSD(); }
-                    } else if (ev.data === 'xtream-next') {
-                      window.__xtreamNext();
-                    } else if (ev.data && ev.data.action === 'xtream-nudge') {
-                      var v2 = window.__xtreamVideo || getBestVideo();
-                      if (v2) {
-                        var cur2 = v2.currentTime || 0;
-                        var dur2 = v2.duration || 999999;
-                        var target2 = Math.min(dur2, Math.max(0, cur2 + ev.data.delta));
-                        try {
-                          if (window.jwplayer && typeof window.jwplayer === 'function') {
-                            var jw2 = window.jwplayer();
-                            if (jw2 && typeof jw2.seek === 'function') {
-                              jw2.seek(target2);
-                            } else {
-                              v2.currentTime = target2;
-                            }
-                          } else {
-                            v2.currentTime = target2;
-                          }
-                        } catch(e) {
-                          v2.currentTime = target2;
-                        }
-                        showOSD();
-                      }
                     } else if (ev.data && ev.data.action === 'xtream-set-quality') {
                       window.__xtreamSetQuality(ev.data.quality);
                     }
@@ -1636,31 +1647,15 @@ class BrowserActivity : Activity() {
                   });
 
                   document.querySelectorAll('#xt-q-pills .xt-pill').forEach(function(pill){
+                    if (pill.getAttribute('data-q') === window.__xtreamQuality) pill.classList.add('active');
                     pill.addEventListener('click', function(e){
                       e.preventDefault();
                       e.stopPropagation();
                       document.querySelectorAll('#xt-q-pills .xt-pill').forEach(function(p){ p.classList.remove('active'); });
                       pill.classList.add('active');
                       var q = pill.getAttribute('data-q');
-                      try {
-                        if (window.jwplayer) {
-                          var jw = window.jwplayer();
-                          var qualities = jw.getQualityLevels ? jw.getQualityLevels() : [];
-                          for (var qi = 0; qi < qualities.length; qi++) {
-                            if (q === 'auto' && (qualities[qi].label || '').toLowerCase().includes('auto')) {
-                              jw.setCurrentQuality(qi); break;
-                            } else if ((qualities[qi].label || '').includes(q)) {
-                              jw.setCurrentQuality(qi); break;
-                            }
-                          }
-                        }
-                      } catch(e1) {}
-                      try {
-                        var qBtns = document.querySelectorAll('[data-quality], .quality-btn, .quality');
-                        qBtns.forEach(function(qb){
-                          if ((qb.textContent || '').includes(q)) qb.click();
-                        });
-                      } catch(e2) {}
+                      try { Xtream.setQuality(q); } catch (e0) {}
+                      window.__xtreamPlayer('quality', q);
                       showOSD();
                     });
                   });
@@ -1672,7 +1667,7 @@ class BrowserActivity : Activity() {
                       document.querySelectorAll('#xt-spd-pills .xt-pill').forEach(function(p){ p.classList.remove('active'); });
                       pill.classList.add('active');
                       var spd = parseFloat(pill.getAttribute('data-spd')) || 1.0;
-                      if (window.__xtreamVideo) window.__xtreamVideo.playbackRate = spd;
+                      window.__xtreamPlayer('speed', spd);
                       showOSD();
                     });
                   });
@@ -1684,7 +1679,7 @@ class BrowserActivity : Activity() {
                       document.querySelectorAll('#xt-fit-pills .xt-pill').forEach(function(p){ p.classList.remove('active'); });
                       pill.classList.add('active');
                       var fit = pill.getAttribute('data-fit') || 'contain';
-                      if (window.__xtreamVideo) window.__xtreamVideo.style.objectFit = fit;
+                      window.__xtreamPlayer('fit', fit);
                       showOSD();
                     });
                   });
