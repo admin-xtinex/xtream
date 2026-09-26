@@ -17,6 +17,8 @@
     <string name="empty_bookmarks">No bookmarks yet. Open a page and press Bookmark.</string>
     <string name="bad_address">Enter a public web address or a search.</string>
     <string name="loading">Loading</string>
+    <string name="cursor">Cursor</string>
+    <string name="remote">Remote</string>
     <string name="history">🕒 History</string>
     <string name="clear_history">Clear History</string>
     <string name="empty_history">No history yet. Pages you visit will appear here.</string>

@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.inputmethod.EditorInfo
 import android.widget.Button
 import android.widget.EditText
@@ -11,6 +12,8 @@ import android.widget.LinearLayout
 import android.widget.TextView
 
 class MainActivity : Activity() {
+    private lateinit var pointer: ScreenPointer
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_home)
@@ -63,6 +66,18 @@ class MainActivity : Activity() {
             shortcuts.addView(tile(entry.title) { open(entry.url, entry.title) })
         }
         address.requestFocus()
+        pointer = ScreenPointer(this)
+        pointer.bind(findViewById(R.id.nav_mode))
+        pointer.attach()
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (::pointer.isInitialized && event.action == KeyEvent.ACTION_DOWN && event.keyCode == KeyEvent.KEYCODE_MENU) {
+            pointer.toggle()
+            return true
+        }
+        if (::pointer.isInitialized && pointer.handle(event)) return true
+        return super.dispatchKeyEvent(event)
     }
 
     override fun onResume() {

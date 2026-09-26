@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.view.Gravity
+import android.view.KeyEvent
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -17,12 +18,25 @@ class BookmarksActivity : Activity() {
     }
 
     private var mode = MODE_BOOKMARKS
+    private lateinit var pointer: ScreenPointer
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_bookmarks)
         mode = intent.getStringExtra(EXTRA_MODE) ?: MODE_BOOKMARKS
         findViewById<Button>(R.id.back).setOnClickListener { finish() }
+        pointer = ScreenPointer(this)
+        pointer.bind(findViewById(R.id.nav_mode))
+        pointer.attach()
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (::pointer.isInitialized && event.action == KeyEvent.ACTION_DOWN && event.keyCode == KeyEvent.KEYCODE_MENU) {
+            pointer.toggle()
+            return true
+        }
+        if (::pointer.isInitialized && pointer.handle(event)) return true
+        return super.dispatchKeyEvent(event)
     }
 
     override fun onResume() {

@@ -46,12 +46,7 @@ class BrowserActivity : Activity() {
     @Volatile
     private var pageHost: String = ""
     private var isVideoFullscreen: Boolean = false
-    // TV two-column navigation: tracks whether D-pad is scrolling the right sidebar
-    private var inSidebar: Boolean = false
-    // TV cursor mode: D-pad moves a pointer, OK clicks it
-    private var cursorMode: Boolean = false
-    private var cursorX: Float = 0f
-    private var cursorY: Float = 0f
+    private lateinit var pointer: ScreenPointer
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -103,22 +98,6 @@ class BrowserActivity : Activity() {
         }
         web.isLongClickable = false
         web.setOnLongClickListener { true }
-        // Intercept D-pad keys on the WebView before WebView's own focus traversal
-        // handles them. Without this, when a link/button inside WebView has focus,
-        // DPAD events never reach onKeyDown.
-        web.setOnKeyListener { _, keyCode, event ->
-            if (event.action == KeyEvent.ACTION_DOWN) {
-                when (keyCode) {
-                    KeyEvent.KEYCODE_DPAD_UP,
-                    KeyEvent.KEYCODE_DPAD_DOWN,
-                    KeyEvent.KEYCODE_DPAD_LEFT,
-                    KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                        onKeyDown(keyCode, event)
-                    }
-                    else -> false
-                }
-            } else false
-        }
         val cookies = android.webkit.CookieManager.getInstance()
         cookies.setAcceptCookie(true)
         cookies.setAcceptThirdPartyCookies(web, true)
@@ -150,6 +129,7 @@ class BrowserActivity : Activity() {
                         ),
                     )
                 }
+                pointer.setSuppressed(true)
             }
 
             override fun onHideCustomView() {
@@ -160,6 +140,7 @@ class BrowserActivity : Activity() {
                 customCallback = null
                 chrome.visibility = View.VISIBLE
                 setImmersiveFullscreen(false)
+                pointer.setSuppressed(false)
                 if (!isTv) {
                     requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
                 }
@@ -314,6 +295,9 @@ class BrowserActivity : Activity() {
         block.setOnKeyListener(dpadDownToWeb)
         optionsBtn.setOnKeyListener(dpadDownToWeb)
         save.setOnKeyListener(dpadDownToWeb)
+        pointer = ScreenPointer(this)
+        pointer.bind(findViewById(R.id.nav_mode))
+        pointer.attach()
 
         val start = intent.getStringExtra(EXTRA_URL) ?: intent.dataString
         if (start.isNullOrBlank()) {
@@ -437,6 +421,29 @@ class BrowserActivity : Activity() {
             .show()
     }
 
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (!::pointer.isInitialized) return super.dispatchKeyEvent(event)
+        if (event.action == KeyEvent.ACTION_DOWN && event.keyCode == KeyEvent.KEYCODE_MENU) {
+            if (isVideoFullscreen || customView != null) showPlayerOptionsMenu() else pointer.toggle()
+            return true
+        }
+        if (pointer.handle(event)) return true
+        if (event.action == KeyEvent.ACTION_DOWN && event.keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+            val atTop = web.scrollY <= 8
+            if (chrome.visibility != View.VISIBLE || (web.hasFocus() && atTop)) {
+                revealChrome()
+                return true
+            }
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
+    private fun revealChrome() {
+        chrome.visibility = View.VISIBLE
+        chrome.bringToFront()
+        findViewById<Button>(R.id.home).requestFocus()
+    }
+
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         when (keyCode) {
             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.KEYCODE_MEDIA_PAUSE -> {
@@ -459,152 +466,9 @@ class BrowserActivity : Activity() {
                 if (isVideoFullscreen || customView != null) {
                     showPlayerOptionsMenu()
                 } else {
-                    // Toggle between remote-scroll mode and cursor-pointer mode
-                    cursorMode = !cursorMode
-                    if (cursorMode) {
-                        cursorX = web.width / 2f
-                        cursorY = web.height / 2f
-                        inSidebar = false
-                        web.evaluateJavascript(
-                            "window.__xtreamShowCursor && window.__xtreamShowCursor($cursorX,$cursorY)", null
-                        )
-                    } else {
-                        web.evaluateJavascript(
-                            "window.__xtreamHideCursor && window.__xtreamHideCursor()", null
-                        )
-                    }
+                    pointer.toggle()
                 }
                 return true
-            }
-            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
-                if (cursorMode) {
-                    web.evaluateJavascript(
-                        "window.__xtreamClickAt && window.__xtreamClickAt($cursorX,$cursorY)", null
-                    )
-                    return true
-                }
-            }
-            KeyEvent.KEYCODE_DPAD_UP -> {
-                if (cursorMode) {
-                    cursorY = maxOf(0f, cursorY - 80f)
-                    web.evaluateJavascript(
-                        "window.__xtreamShowCursor && window.__xtreamShowCursor($cursorX,$cursorY)", null
-                    )
-                    return true
-                }
-                if (chrome.visibility != View.VISIBLE) {
-                    // Show nav bar when hidden (e.g. video OSD mode)
-                    chrome.visibility = View.VISIBLE
-                    inSidebar = false
-                    findViewById<Button>(R.id.home).requestFocus()
-                    return true
-                } else if (web.scrollY == 0 && !inSidebar) {
-                    // At top of main column: move focus to nav bar
-                    inSidebar = false
-                    findViewById<Button>(R.id.home).requestFocus()
-                    return true
-                } else {
-                    // Scroll the active column up
-                    val sidebarJs = """
-                        (function(){
-                          var threshold=window.innerWidth*0.55;
-                          var s=[...document.querySelectorAll('div,section,aside,article')]
-                            .find(function(e){
-                              var r=e.getBoundingClientRect();
-                              return r.left>=threshold && r.height>200;
-                            });
-                          if(s)s.scrollBy({top:-300,behavior:'smooth'});
-                          else window.scrollBy({top:-300,behavior:'smooth'});
-                        })()
-                    """.trimIndent()
-                    val js = if (inSidebar) sidebarJs else "window.scrollBy({top:-300,behavior:'smooth'})"
-                    web.evaluateJavascript(js, null)
-                    return true
-                }
-            }
-            KeyEvent.KEYCODE_DPAD_DOWN -> {
-                if (cursorMode) {
-                    cursorY = minOf(web.height.toFloat(), cursorY + 80f)
-                    web.evaluateJavascript(
-                        "window.__xtreamShowCursor && window.__xtreamShowCursor($cursorX,$cursorY)", null
-                    )
-                    return true
-                }
-                // Scroll the active column down — breaks iframe focus trap
-                val sidebarJs = """
-                    (function(){
-                      var threshold=window.innerWidth*0.55;
-                      var s=[...document.querySelectorAll('div,section,aside,article')]
-                        .find(function(e){
-                          var r=e.getBoundingClientRect();
-                          return r.left>=threshold && r.height>200;
-                        });
-                      if(s)s.scrollBy({top:300,behavior:'smooth'});
-                      else window.scrollBy({top:300,behavior:'smooth'});
-                    })()
-                """.trimIndent()
-                val js = if (inSidebar) sidebarJs else "window.scrollBy({top:300,behavior:'smooth'})"
-                web.evaluateJavascript(js, null)
-                return true
-            }
-            KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                if (cursorMode) {
-                    cursorX = minOf(web.width.toFloat(), cursorX + 80f)
-                    web.evaluateJavascript(
-                        "window.__xtreamShowCursor && window.__xtreamShowCursor($cursorX,$cursorY)", null
-                    )
-                    return true
-                }
-                // Switch focus to right sidebar (Genres / Most Viewed)
-                if (!inSidebar) {
-                    inSidebar = true
-                    web.evaluateJavascript(
-                        """
-                        (function(){
-                          var threshold=window.innerWidth*0.55;
-                          var s=[...document.querySelectorAll('div,section,aside,article')]
-                            .find(function(e){
-                              var r=e.getBoundingClientRect();
-                              return r.left>=threshold && r.height>200;
-                            });
-                          if(s){
-                            s.style.outline='2px solid #1e90ff';
-                            s.scrollIntoView({behavior:'smooth',block:'start'});
-                          }
-                        })()
-                        """.trimIndent(),
-                        null
-                    )
-                    return true
-                }
-            }
-            KeyEvent.KEYCODE_DPAD_LEFT -> {
-                if (cursorMode) {
-                    cursorX = maxOf(0f, cursorX - 80f)
-                    web.evaluateJavascript(
-                        "window.__xtreamShowCursor && window.__xtreamShowCursor($cursorX,$cursorY)", null
-                    )
-                    return true
-                }
-                // Switch focus back to main content column
-                if (inSidebar) {
-                    inSidebar = false
-                    web.evaluateJavascript(
-                        """
-                        (function(){
-                          var threshold=window.innerWidth*0.55;
-                          var s=[...document.querySelectorAll('div,section,aside,article')]
-                            .find(function(e){
-                              var r=e.getBoundingClientRect();
-                              return r.left>=threshold && r.height>200;
-                            });
-                          if(s)s.style.outline='';
-                        })()
-                        """.trimIndent(),
-                        null
-                    )
-                    return true
-                }
             }
         }
         return super.onKeyDown(keyCode, event)
@@ -752,6 +616,7 @@ class BrowserActivity : Activity() {
 
     private fun exitVideo() {
         setImmersiveFullscreen(false)
+        if (::pointer.isInitialized) pointer.setSuppressed(false)
         if (customView != null) {
             (web.webChromeClient as? WebChromeClient)?.onHideCustomView()
             return
@@ -771,6 +636,7 @@ class BrowserActivity : Activity() {
             runOnUiThread {
                 chrome.visibility = View.GONE
                 setImmersiveFullscreen(true)
+                if (::pointer.isInitialized) pointer.setSuppressed(true)
                 if (!resources.getBoolean(R.bool.is_television)) {
                     requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
                 }
