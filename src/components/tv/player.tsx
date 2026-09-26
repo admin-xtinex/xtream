@@ -7,9 +7,7 @@ import {
   Play,
   RotateCcw,
   RotateCw,
-  Sliders,
   Star,
-  Tv,
   Volume2,
   VolumeX,
   X,
@@ -56,15 +54,21 @@ export function Player({
   const [duration, setDuration] = useState(0);
   const [muted, setMuted] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
+  const [buffering, setBuffering] = useState(false);
   const [chromeOn, setChromeOn] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     setFatal(format === "dash" ? "dash" : null);
     setTime(0);
     setDuration(0);
     setPlaying(false);
+    setMuted(false);
+    setPlaybackRate(1);
+    setBuffering(false);
     setChromeOn(true);
+    setAttempt(0);
   }, [url, format]);
 
   useEffect(() => {
@@ -78,14 +82,26 @@ export function Player({
     };
     const onTime = () => setTime(video.currentTime || 0);
     const onMeta = () => setDuration(video.duration || 0);
-    const onPlay = () => setPlaying(true);
+    const onPlay = () => {
+      setPlaying(true);
+      setBuffering(false);
+    };
     const onPause = () => setPlaying(false);
+    const onWaiting = () => setBuffering(true);
+    const onCanPlay = () => setBuffering(false);
+    const onVolume = () => setMuted(video.muted);
 
     video.addEventListener("error", onError);
     video.addEventListener("timeupdate", onTime);
     video.addEventListener("durationchange", onMeta);
+    video.addEventListener("loadedmetadata", onMeta);
     video.addEventListener("play", onPlay);
     video.addEventListener("pause", onPause);
+    video.addEventListener("waiting", onWaiting);
+    video.addEventListener("stalled", onWaiting);
+    video.addEventListener("canplay", onCanPlay);
+    video.addEventListener("seeked", onCanPlay);
+    video.addEventListener("volumechange", onVolume);
 
     const start = async () => {
       const nativeHls = video.canPlayType("application/vnd.apple.mpegurl");
@@ -101,7 +117,16 @@ export function Player({
         instance.loadSource(url);
         instance.attachMedia(video);
         instance.on(Hls.Events.ERROR, (_event, data) => {
-          if (!data.fatal || dead) return;
+          if (dead || !data.fatal) return;
+          if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+            setBuffering(true);
+            instance.startLoad();
+            return;
+          }
+          if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+            instance.recoverMediaError();
+            return;
+          }
           setFatal("play");
         });
         instance.on(Hls.Events.MANIFEST_PARSED, () => {
@@ -119,13 +144,19 @@ export function Player({
       video.removeEventListener("error", onError);
       video.removeEventListener("timeupdate", onTime);
       video.removeEventListener("durationchange", onMeta);
+      video.removeEventListener("loadedmetadata", onMeta);
       video.removeEventListener("play", onPlay);
       video.removeEventListener("pause", onPause);
+      video.removeEventListener("waiting", onWaiting);
+      video.removeEventListener("stalled", onWaiting);
+      video.removeEventListener("canplay", onCanPlay);
+      video.removeEventListener("seeked", onCanPlay);
+      video.removeEventListener("volumechange", onVolume);
       hls?.destroy();
       video.removeAttribute("src");
       video.load();
     };
-  }, [url, format]);
+  }, [url, format, attempt]);
 
   useEffect(() => {
     const el = seekRef.current;
@@ -157,6 +188,12 @@ export function Player({
     return () => window.clearTimeout(id);
   }, [hideControls, playing, chromeOn]);
 
+  useEffect(() => {
+    const onFullscreenChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+  }, []);
+
   function toggle() {
     const video = videoRef.current;
     if (!video) return;
@@ -184,10 +221,8 @@ export function Player({
   function toggleFullscreen() {
     if (!document.fullscreenElement) {
       void containerRef.current?.requestFullscreen?.();
-      setIsFullscreen(true);
     } else {
       void document.exitFullscreen?.();
-      setIsFullscreen(false);
     }
   }
 
@@ -217,13 +252,27 @@ export function Player({
         <p className="max-w-md text-sm text-muted">
           Xtream plays direct HTML5 and HLS video files. DRM protected and token-expired media stay closed.
         </p>
-        <TvButton
-          primary
-          onClick={onBack}
-          className="px-8 py-3 rounded-xl font-bold text-sm"
-        >
-          Return to Browser
-        </TvButton>
+        <div className="flex flex-wrap items-center justify-center gap-3">
+          {fatal !== "dash" ? (
+            <TvButton
+              primary
+              onClick={() => {
+                setFatal(null);
+                setBuffering(true);
+                setAttempt((n) => n + 1);
+              }}
+              className="px-8 py-3 rounded-xl font-bold text-sm"
+            >
+              Retry Stream
+            </TvButton>
+          ) : null}
+          <TvButton
+            onClick={onBack}
+            className="px-8 py-3 rounded-xl font-bold text-sm"
+          >
+            Return to Browser
+          </TvButton>
+        </div>
       </div>
     );
   }
@@ -242,6 +291,13 @@ export function Player({
         playsInline
         preload="metadata"
       />
+      {buffering ? (
+        <div className="pointer-events-none absolute inset-x-0 top-4 z-20 flex justify-center">
+          <span className="rounded-full bg-black/80 px-3 py-1 text-xs font-semibold text-fg">
+            Buffering…
+          </span>
+        </div>
+      ) : null}
 
       {/* Chrome Overlay */}
       {chromeOn ? (

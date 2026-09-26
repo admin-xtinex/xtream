@@ -18,8 +18,17 @@ function visible(el: HTMLElement): boolean {
   return rect.width > 0 && rect.height > 0;
 }
 
+const NAV_SELECTOR = [
+  "[data-tv]",
+  "button",
+  "a[href]",
+  "[role='button']",
+  "[role='slider']",
+  "[tabindex]:not([tabindex='-1'])",
+].join(",");
+
 export function focusables(): HTMLElement[] {
-  return [...document.querySelectorAll<HTMLElement>("[data-tv]")].filter(visible);
+  return [...document.querySelectorAll<HTMLElement>(`#focus-root ${NAV_SELECTOR}`)].filter(visible);
 }
 
 function syncFocusClass(el: HTMLElement | null) {
@@ -96,12 +105,27 @@ export function useRemote(opts: RemoteOpts) {
     const onKey = (event: KeyboardEvent) => {
       const o = ref.current;
       if (event.metaKey || event.ctrlKey || event.altKey) return;
+      const active = document.activeElement;
+      const editing =
+        active instanceof HTMLElement &&
+        (active.isContentEditable || /^(INPUT|TEXTAREA)$/i.test(active.tagName));
+      if (
+        editing &&
+        active instanceof HTMLElement &&
+        !active.hasAttribute("data-tv-seek") &&
+        (event.key in DIRS ||
+          event.key === "Backspace" ||
+          event.key === "Delete" ||
+          event.key === " " ||
+          (event.key.length === 1 && event.key >= " " && event.key <= "~"))
+      ) {
+        return;
+      }
       const chromeKeys = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Enter", " "];
       if (chromeKeys.includes(event.key) && o.onChrome()) {
         event.preventDefault();
         return;
       }
-      const active = document.activeElement;
       if (
         (event.key === "ArrowLeft" || event.key === "ArrowRight") &&
         active instanceof HTMLElement &&
