@@ -101,7 +101,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          notes="Cursor scrolls pages and sidebars at the screen edge. Up always gets back to Home after a video, and holding Up leaves any stuck spot."
+          notes="Cursor scrolls pages and sidebars at the screen edge, including to the bottom. Up always gets back to Home after a video. Security hardening: no LAN access for pages, no debugging in release, outdated-engine warning."
           if gh release view v2.6.1 >/dev/null 2>&1; then
             gh release upload v2.6.1 xtream-tv.apk xtream-mobile.apk --clobber
           else
