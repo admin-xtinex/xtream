@@ -48,6 +48,7 @@ export function Player({
   const videoRef = useRef<HTMLVideoElement>(null);
   const seekRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const hlsRecoveriesRef = useRef({ network: 0, media: 0 });
   const [fatal, setFatal] = useState<string | null>(format === "dash" ? "dash" : null);
   const [playing, setPlaying] = useState(false);
   const [time, setTime] = useState(0);
@@ -58,6 +59,22 @@ export function Player({
   const [chromeOn, setChromeOn] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [attempt, setAttempt] = useState(0);
+
+  const getFullscreenElement = () => {
+    if (typeof document === "undefined") return null;
+    const doc = document as Document & {
+      webkitFullscreenElement?: Element | null;
+      mozFullScreenElement?: Element | null;
+      msFullscreenElement?: Element | null;
+    };
+    return (
+      document.fullscreenElement ||
+      doc.webkitFullscreenElement ||
+      doc.mozFullScreenElement ||
+      doc.msFullscreenElement ||
+      null
+    );
+  };
 
   useEffect(() => {
     setFatal(format === "dash" ? "dash" : null);
@@ -76,19 +93,25 @@ export function Player({
     if (!video || format === "dash") return;
     let dead = false;
     let hls: { destroy: () => void } | null = null;
+    let usingHlsJs = false;
+    hlsRecoveriesRef.current = { network: 0, media: 0 };
 
     const onError = () => {
-      if (!dead) setFatal("play");
+      if (dead || usingHlsJs) return;
+      setFatal("play");
     };
     const onTime = () => setTime(video.currentTime || 0);
     const onMeta = () => setDuration(video.duration || 0);
     const onPlay = () => {
       setPlaying(true);
       setBuffering(false);
+      hlsRecoveriesRef.current = { network: 0, media: 0 };
     };
     const onPause = () => setPlaying(false);
-    const onWaiting = () => setBuffering(true);
-    const onCanPlay = () => setBuffering(false);
+    const onWaiting = () => setBuffering(!video.paused);
+    const onCanPlay = () => {
+      setBuffering(false);
+    };
     const onVolume = () => setMuted(video.muted);
 
     video.addEventListener("error", onError);
@@ -106,6 +129,7 @@ export function Player({
     const start = async () => {
       const nativeHls = video.canPlayType("application/vnd.apple.mpegurl");
       if (format === "hls" && nativeHls === "") {
+        usingHlsJs = true;
         const { default: Hls } = await import("hls.js");
         if (dead) return;
         if (!Hls.isSupported()) {
@@ -119,17 +143,28 @@ export function Player({
         instance.on(Hls.Events.ERROR, (_event, data) => {
           if (dead || !data.fatal) return;
           if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+            if (hlsRecoveriesRef.current.network >= 2) {
+              setFatal("play");
+              return;
+            }
+            hlsRecoveriesRef.current.network += 1;
             setBuffering(true);
             instance.startLoad();
             return;
           }
           if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+            if (hlsRecoveriesRef.current.media >= 2) {
+              setFatal("play");
+              return;
+            }
+            hlsRecoveriesRef.current.media += 1;
             instance.recoverMediaError();
             return;
           }
           setFatal("play");
         });
         instance.on(Hls.Events.MANIFEST_PARSED, () => {
+          hlsRecoveriesRef.current = { network: 0, media: 0 };
           if (!dead) void video.play().catch(() => setPlaying(false));
         });
         return;
@@ -189,9 +224,21 @@ export function Player({
   }, [hideControls, playing, chromeOn]);
 
   useEffect(() => {
-    const onFullscreenChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    if (typeof document === "undefined") return;
+    const onFullscreenChange = () => {
+      setIsFullscreen(Boolean(getFullscreenElement()));
+    };
+    onFullscreenChange();
     document.addEventListener("fullscreenchange", onFullscreenChange);
-    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+    document.addEventListener("webkitfullscreenchange", onFullscreenChange);
+    document.addEventListener("mozfullscreenchange", onFullscreenChange);
+    document.addEventListener("MSFullscreenChange", onFullscreenChange);
+    return () => {
+      document.removeEventListener("fullscreenchange", onFullscreenChange);
+      document.removeEventListener("webkitfullscreenchange", onFullscreenChange);
+      document.removeEventListener("mozfullscreenchange", onFullscreenChange);
+      document.removeEventListener("MSFullscreenChange", onFullscreenChange);
+    };
   }, []);
 
   function toggle() {
@@ -219,7 +266,7 @@ export function Player({
   }
 
   function toggleFullscreen() {
-    if (!document.fullscreenElement) {
+    if (!getFullscreenElement()) {
       void containerRef.current?.requestFullscreen?.();
     } else {
       void document.exitFullscreen?.();
@@ -257,6 +304,14 @@ export function Player({
             <TvButton
               primary
               onClick={() => {
+                const video = videoRef.current;
+                if (video) {
+                  video.currentTime = 0;
+                  video.pause();
+                }
+                setTime(0);
+                setDuration(0);
+                setPlaying(false);
                 setFatal(null);
                 setBuffering(true);
                 setAttempt((n) => n + 1);
@@ -292,7 +347,11 @@ export function Player({
         preload="metadata"
       />
       {buffering ? (
-        <div className="pointer-events-none absolute inset-x-0 top-4 z-20 flex justify-center">
+        <div
+          role="status"
+          aria-live="polite"
+          className="pointer-events-none absolute inset-x-0 top-4 z-20 flex justify-center"
+        >
           <span className="rounded-full bg-black/80 px-3 py-1 text-xs font-semibold text-fg">
             Buffering…
           </span>

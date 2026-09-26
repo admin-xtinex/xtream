@@ -284,6 +284,7 @@ export function HomeScreen({
             {draft && (
               <button
                 type="button"
+                data-tv=""
                 onClick={() => setDraft("")}
                 className="p-2 text-muted hover:text-fg transition"
                 aria-label="Clear input"
@@ -323,6 +324,7 @@ export function HomeScreen({
               <button
                 key={shortcut.label}
                 type="button"
+                data-tv=""
                 onClick={() => onOpen(shortcut.url)}
                 className="rounded-lg bg-surface/60 hover:bg-surface-2 border border-line/50 px-2.5 py-1 text-xs text-muted hover:text-fg transition"
               >
@@ -385,6 +387,7 @@ export function HomeScreen({
                 <button
                   key={cat}
                   type="button"
+                  data-tv=""
                   onClick={() => setSelectedCategory(cat)}
                   className={clsx(
                     "px-3 py-1 rounded-lg text-xs font-semibold transition",
@@ -941,6 +944,7 @@ export function ListScreen({
               >
                 <button
                   type="button"
+                  data-tv=""
                   onClick={() => onOpen(row.url)}
                   className="min-w-0 flex-1 text-left select-none"
                 >
@@ -963,6 +967,7 @@ export function ListScreen({
                   </TvButton>
                   <button
                     type="button"
+                    data-tv=""
                     onClick={() => onRemove(row.id)}
                     aria-label={`Remove ${row.title}`}
                     className="p-2 rounded-lg text-muted hover:text-danger hover:bg-danger/15 transition"
@@ -1058,6 +1063,7 @@ export function SettingsScreen({
                 <button
                   key={engine}
                   type="button"
+                  data-tv=""
                   onClick={() => onChange({ searchEngine: engine })}
                   className={clsx(
                     "flex items-center justify-center py-2.5 px-3 rounded-xl text-xs font-bold transition border",
@@ -1080,6 +1086,7 @@ export function SettingsScreen({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <button
                 type="button"
+                data-tv=""
                 onClick={() => onChange({ browserMode: "standard" })}
                 className={clsx(
                   "flex items-center justify-center gap-2 py-3 px-3 rounded-xl text-xs font-bold transition border",
@@ -1094,6 +1101,7 @@ export function SettingsScreen({
 
               <button
                 type="button"
+                data-tv=""
                 onClick={() => onChange({ browserMode: "desktop" })}
                 className={clsx(
                   "flex items-center justify-center gap-2 py-3 px-3 rounded-xl text-xs font-bold transition border",
@@ -1122,6 +1130,7 @@ export function SettingsScreen({
               <button
                 key={item.id}
                 type="button"
+                data-tv=""
                 onClick={() => onChange({ deviceMode: item.id as any })}
                 className={clsx(
                   "flex items-center justify-center gap-2 py-3 px-3 rounded-xl text-xs font-bold transition border",

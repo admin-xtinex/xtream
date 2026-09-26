@@ -18,17 +18,8 @@ function visible(el: HTMLElement): boolean {
   return rect.width > 0 && rect.height > 0;
 }
 
-const NAV_SELECTOR = [
-  "[data-tv]",
-  "button",
-  "a[href]",
-  "[role='button']",
-  "[role='slider']",
-  "[tabindex]:not([tabindex='-1'])",
-].join(",");
-
 export function focusables(): HTMLElement[] {
-  return [...document.querySelectorAll<HTMLElement>(`#focus-root ${NAV_SELECTOR}`)].filter(visible);
+  return [...document.querySelectorAll<HTMLElement>("#focus-root [data-tv]")].filter(visible);
 }
 
 function syncFocusClass(el: HTMLElement | null) {
@@ -105,10 +96,17 @@ export function useRemote(opts: RemoteOpts) {
     const onKey = (event: KeyboardEvent) => {
       const o = ref.current;
       if (event.metaKey || event.ctrlKey || event.altKey) return;
+      const code = event.key.codePointAt(0) ?? 0;
+      const printable = event.key.length === 1 && code >= 0x20 && code !== 0x7f;
       const active = document.activeElement;
+      const textInput =
+        active instanceof HTMLInputElement &&
+        !["button", "checkbox", "color", "file", "image", "radio", "range", "reset", "submit"].includes(
+          active.type,
+        );
       const editing =
         active instanceof HTMLElement &&
-        (active.isContentEditable || /^(INPUT|TEXTAREA)$/i.test(active.tagName));
+        (active.isContentEditable || active instanceof HTMLTextAreaElement || textInput);
       if (
         editing &&
         active instanceof HTMLElement &&
@@ -117,7 +115,7 @@ export function useRemote(opts: RemoteOpts) {
           event.key === "Backspace" ||
           event.key === "Delete" ||
           event.key === " " ||
-          (event.key.length === 1 && event.key >= " " && event.key <= "~"))
+          printable)
       ) {
         return;
       }
@@ -153,7 +151,7 @@ export function useRemote(opts: RemoteOpts) {
         else o.onBack();
         return;
       }
-      if (o.onText && event.key.length === 1 && event.key >= " " && event.key <= "~") {
+      if (o.onText && printable) {
         event.preventDefault();
         o.onText(event.key);
       }
