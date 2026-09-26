@@ -11,6 +11,16 @@ object EngineAge {
     private const val RELEASE_DAYS = 28L
     private const val ALLOWED_BEHIND = 12 // roughly a year
 
+    private const val PREF = "xtream"
+    private const val KEY = "engine_warning"
+
+    fun warningOn(context: Context): Boolean =
+        context.getSharedPreferences(PREF, Context.MODE_PRIVATE).getBoolean(KEY, true)
+
+    fun setWarning(context: Context, on: Boolean) {
+        context.getSharedPreferences(PREF, Context.MODE_PRIVATE).edit().putBoolean(KEY, on).apply()
+    }
+
     fun outdatedMajor(context: Context, today: Long = System.currentTimeMillis() / 86_400_000L): Int? {
         val version = try {
             WebViewCompat.getCurrentWebViewPackage(context)?.versionName

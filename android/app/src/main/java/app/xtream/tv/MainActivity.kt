@@ -13,6 +13,7 @@ import android.widget.TextView
 
 class MainActivity : Activity() {
     private lateinit var pointer: ScreenPointer
+    private var engineNotice = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -65,14 +66,57 @@ class MainActivity : Activity() {
         links.forEach { entry ->
             shortcuts.addView(tile(entry.title) { open(entry.url, entry.title) })
         }
-        EngineAge.outdatedMajor(this)?.let { major ->
-            notice.text = getString(R.string.old_engine, major)
-            notice.visibility = TextView.VISIBLE
-        }
+        showEngineWarning(notice)
+        findViewById<Button>(R.id.settings).setOnClickListener { showSettings(notice) }
         address.requestFocus()
         pointer = ScreenPointer(this)
         pointer.bind(findViewById(R.id.nav_mode))
         pointer.attach()
+    }
+
+    private fun showEngineWarning(notice: TextView) {
+        val major = if (EngineAge.warningOn(this)) EngineAge.outdatedMajor(this) else null
+        if (major != null) {
+            notice.text = getString(R.string.old_engine, major)
+            notice.visibility = TextView.VISIBLE
+            engineNotice = true
+        } else if (engineNotice) {
+            notice.visibility = TextView.GONE
+            engineNotice = false
+        }
+    }
+
+    private fun showSettings(notice: TextView) {
+        val items = arrayOf(
+            getString(if (EngineAge.warningOn(this)) R.string.engine_warning_on else R.string.engine_warning_off),
+            getString(R.string.quality_setting, VideoQuality.label(this)),
+        )
+        android.app.AlertDialog.Builder(this)
+            .setTitle(R.string.settings)
+            .setItems(items) { _, which ->
+                when (which) {
+                    0 -> {
+                        EngineAge.setWarning(this, !EngineAge.warningOn(this))
+                        showEngineWarning(notice)
+                        showSettings(notice)
+                    }
+                    1 -> showQualityChoice(notice)
+                }
+            }
+            .setNegativeButton(android.R.string.ok, null)
+            .show()
+    }
+
+    private fun showQualityChoice(notice: TextView) {
+        val current = VideoQuality.values.indexOf(VideoQuality.get(this)).coerceAtLeast(0)
+        android.app.AlertDialog.Builder(this)
+            .setTitle(getString(R.string.quality_setting, "").trimEnd(' ', ':'))
+            .setSingleChoiceItems(VideoQuality.labels, current) { dialog, which ->
+                VideoQuality.set(this, VideoQuality.values[which])
+                dialog.dismiss()
+                showSettings(notice)
+            }
+            .show()
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {

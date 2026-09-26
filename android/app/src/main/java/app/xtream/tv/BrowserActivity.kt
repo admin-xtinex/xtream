@@ -431,8 +431,8 @@ class BrowserActivity : Activity() {
     }
 
     private fun showQualityDialog() {
-        val labels = arrayOf("Best (1080p minimum, up to 4K)", "1080p", "720p", "480p", "360p", "Auto (site decides)")
-        val values = arrayOf("best", "1080", "720", "480", "360", "auto")
+        val labels = VideoQuality.labels
+        val values = VideoQuality.values
         val current = values.indexOf(VideoQuality.get(this)).coerceAtLeast(0)
         android.app.AlertDialog.Builder(this)
             .setTitle("Video Quality")
