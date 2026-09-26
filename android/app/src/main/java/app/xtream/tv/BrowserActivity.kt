@@ -1027,7 +1027,9 @@ class BrowserActivity : Activity() {
                       if (!(cfg.abrEwmaDefaultEstimate > 8000000)) cfg.abrEwmaDefaultEstimate = 8000000;
                       cfg.testBandwidth = false;
                     }
-                    var h = Reflect.construct(H, [cfg], new.target || W);
+                    // A site subclassing Hls reaches here through super(); keep its class.
+                    var ctor = this instanceof W && typeof this.constructor === 'function' ? this.constructor : W;
+                    var h = Reflect.construct(H, [cfg], ctor);
                     hlsList.push(h);
                     try {
                       var ev = (H.Events && H.Events.MANIFEST_PARSED) || 'hlsManifestParsed';
@@ -1285,6 +1287,7 @@ class BrowserActivity : Activity() {
                   if (window.__xtreamAds !== false && skipAd(v)) return;
                   var box = v.getBoundingClientRect();
                   if (box.width < 200 && box.height < 120) return;
+                  v.__xtreamStarted = true;
                   // Resuming, seeking or a new source must not restart the fullscreen hand-off.
                   var already = document.fullscreenElement || document.webkitFullscreenElement;
                   if (!already) {
@@ -1350,7 +1353,9 @@ class BrowserActivity : Activity() {
 
                 var best = getBestVideo();
                 var osd = document.getElementById('xtream-player-osd');
-                if (!best) {
+                // Only a video the viewer actually started gets the bar, so it never
+                // sits over the bottom of an ordinary page with a preview or banner video.
+                if (!best || !best.__xtreamStarted) {
                   if (osd) osd.style.display = 'none';
                   return;
                 }
