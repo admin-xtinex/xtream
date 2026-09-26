@@ -321,17 +321,9 @@ class BrowserActivity : Activity() {
         block.setOnKeyListener(dpadDownToWeb)
         optionsBtn.setOnKeyListener(dpadDownToWeb)
         save.setOnKeyListener(dpadDownToWeb)
+        // The page sits below the top bar, so the bar never covers a site's own menu or search.
+        (chrome.parent as View).addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> web.post { fitPageBelowBar() } }
         pointer = ScreenPointer(this)
-        pointer.topInset = {
-            val bar = chrome.parent as View
-            if (chrome.visibility == View.VISIBLE) {
-                val box = IntArray(2)
-                bar.getLocationInWindow(box)
-                box[1] + bar.height
-            } else {
-                0
-            }
-        }
         pointer.bind(findViewById(R.id.nav_mode))
         pointer.attach()
 
@@ -526,6 +518,15 @@ class BrowserActivity : Activity() {
             }
         }
         return super.dispatchKeyEvent(event)
+    }
+
+    private fun fitPageBelowBar() {
+        val top = if (chrome.visibility == View.VISIBLE && customView == null) chrome.bottom else 0
+        val params = web.layoutParams as FrameLayout.LayoutParams
+        if (params.topMargin != top) {
+            params.topMargin = top
+            web.layoutParams = params
+        }
     }
 
     private fun revealChrome() {

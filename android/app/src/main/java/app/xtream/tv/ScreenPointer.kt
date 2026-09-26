@@ -26,9 +26,6 @@ class ScreenPointer(private val activity: Activity) {
     private var placed = false
     private var refreshButton: (() -> Unit)? = null
 
-    /** Window y where content stops being hidden behind a toolbar drawn over it. */
-    var topInset: () -> Int = { 0 }
-
     fun attach() {
         val decor = activity.window.decorView as ViewGroup
         if (layer.parent == null) {
@@ -145,7 +142,7 @@ class ScreenPointer(private val activity: Activity) {
         val target = scrollableAt(activity.window.decorView, wx, wy, dx, dy) ?: return false
         val box = IntArray(2)
         target.getLocationInWindow(box)
-        val top = maxOf(box[1], topInset()).toFloat()
+        val top = box[1].toFloat()
         val band = edgeBand
         val atEdge = (dy < 0 && wy <= top + band) ||
             (dy > 0 && wy >= box[1] + target.height - band) ||
