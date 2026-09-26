@@ -6,8 +6,8 @@ Living-room browser. The web app in this repo is the preview. The installable An
 
 Two sideloadable builds are published on every push to `main`:
 
-- [xtream-tv.apk](https://github.com/admin-xtinex/xtream/releases/download/v2.7.2/xtream-tv.apk) for Android TV (landscape, TV launcher)
-- [xtream-mobile.apk](https://github.com/admin-xtinex/xtream/releases/download/v2.7.2/xtream-mobile.apk) for phones
+- [xtream-tv.apk](https://github.com/admin-xtinex/xtream/releases/download/v2.7.3/xtream-tv.apk) for Android TV (landscape, TV launcher)
+- [xtream-mobile.apk](https://github.com/admin-xtinex/xtream/releases/download/v2.7.3/xtream-mobile.apk) for phones
 
 Install with `adb install -r xtream-tv.apk` or `adb install -r xtream-mobile.apk`. The package names are different, so both can be installed on the same device. If a Thomson TV says the app is not installed, uninstall any older Xtream first, then install 2.5.0. That build is a normal release APK with the signature those TVs accept.
 
@@ -15,7 +15,7 @@ Install with `adb install -r xtream-tv.apk` or `adb install -r xtream-mobile.apk
 
 **Playing a video with the remote.** OK plays or pauses, Left and Right seek 10 seconds (hold for 30-second jumps), Down opens Player Options (quality, speed, aspect, next episode), Up shows the top bar, and Back leaves the player. MENU also opens Player Options. These work in fullscreen and for players embedded in other sites' frames.
 
-**Video quality.** Players are pushed to the best level the stream offers, never under 1080p when 1080p exists, up to 4K when the site streams it and the TV can decode it. Change it under ⚙ Settings on Home or Options → Video Quality (Best, 1080p, 720p, 480p, 360p, or Auto to let the site decide); the choice is remembered. The TV app loads the desktop version of sites, since phone versions start low.
+**Video quality.** Player Options → Video Quality lists the qualities this video really has, read from its stream. The app trims the stream to your choice and reloads it at the same spot, so the picture changes whatever player the site uses. Players are pushed to the best level the stream offers, never under 1080p when 1080p exists, up to 4K when the site streams it and the TV can decode it. Change it under ⚙ Settings on Home or Options → Video Quality (Best, 1080p, 720p, 480p, 360p, or Auto to let the site decide); the choice is remembered. The TV app loads the desktop version of sites, since phone versions start low.
 
 **Security.** Pages run on the device's own Android System WebView, so keep that updated; Home warns when it is about a year or more out of date; turn that warning off under **⚙ Settings** on Home. The app never fetches router, Wi-Fi or TV-local addresses on a page's behalf, only lets other apps open plain `http`/`https` links, keeps page debugging to debug builds, leaves browsing data out of device backups, and restarts a page cleanly if its engine crashes.
 

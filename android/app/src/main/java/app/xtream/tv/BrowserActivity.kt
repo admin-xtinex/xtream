@@ -53,6 +53,9 @@ class BrowserActivity : Activity() {
     private var feedback: android.widget.Toast? = null
     // Player Options only make sense once a video has started on this page.
     private lateinit var videoButton: Button
+    // Qualities the current video really offers, read from its stream.
+    @Volatile
+    private var streamHeights: List<Int> = emptyList()
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -208,7 +211,7 @@ class BrowserActivity : Activity() {
                 }
 
                 if (streamProxy) {
-                    val streamResp = handlePlayitStream(url, request.requestHeaders)
+                    val streamResp = handlePlayitStream(url, request.requestHeaders, playlistProxy)
                     if (streamResp != null) return streamResp
                 }
 
@@ -270,6 +273,7 @@ class BrowserActivity : Activity() {
                 // A new page has no video yet: leave player mode and hide Player Options.
                 if (customView == null && isVideoFullscreen) exitVideo()
                 videoButton.visibility = View.GONE
+                streamHeights = emptyList()
                 showLoad()
             }
 
@@ -439,14 +443,29 @@ class BrowserActivity : Activity() {
     }
 
     private fun showQualityDialog() {
-        val labels = VideoQuality.labels
-        val values = VideoQuality.values
-        val current = values.indexOf(VideoQuality.get(this)).coerceAtLeast(0)
+        val real = streamHeights
+        val values = ArrayList<String>()
+        val labels = ArrayList<String>()
+        values.add("best")
+        labels.add(if (real.isEmpty()) "Best (1080p minimum, up to 4K)" else "Best (${HlsMaster.keptHeights(real, "best").sortedDescending().joinToString(" / ") { "${it}p" }})")
+        val heights = real.ifEmpty { listOf(1080, 720, 480, 360) }
+        heights.forEach {
+            values.add("$it")
+            labels.add("${it}p")
+        }
+        values.add("auto")
+        labels.add("Auto (site decides)")
+        val title = if (real.isEmpty()) {
+            "Video Quality (this video's list not found yet)"
+        } else {
+            "Video Quality (this video: ${real.joinToString(", ") { "${it}p" }})"
+        }
         android.app.AlertDialog.Builder(this)
-            .setTitle("Video Quality")
-            .setSingleChoiceItems(labels, current) { dialog, which ->
+            .setTitle(title)
+            .setSingleChoiceItems(labels.toTypedArray(), values.indexOf(VideoQuality.get(this))) { dialog, which ->
                 val q = values[which]
                 VideoQuality.set(this, q)
+                // Reloads the stream at the same spot so the new playlist takes effect.
                 player("quality", "'$q'")
                 flash("Quality: ${labels[which]}")
                 dialog.dismiss()
@@ -622,7 +641,7 @@ class BrowserActivity : Activity() {
         }
     }
 
-    private fun handlePlayitStream(url: Uri, reqHeaders: Map<String, String>): WebResourceResponse? {
+    private fun handlePlayitStream(url: Uri, reqHeaders: Map<String, String>, playlist: Boolean): WebResourceResponse? {
         var rawUrl = url.toString()
         if (rawUrl.contains("playit15.xyz")) {
             rawUrl = rawUrl.replace("playit15.xyz", "playit11.xyz")
@@ -658,6 +677,18 @@ class BrowserActivity : Activity() {
                         "Access-Control-Allow-Headers" to "*",
                         "Content-Type" to (conn.contentType ?: "video/mp2t")
                     )
+                    if (playlist) {
+                        val text = conn.inputStream.bufferedReader().use { it.readText() }
+                        respHeaders["Cache-Control"] = "no-store"
+                        return WebResourceResponse(
+                            "application/vnd.apple.mpegurl",
+                            "UTF-8",
+                            200,
+                            "OK",
+                            respHeaders,
+                            ByteArrayInputStream(shapePlaylist(text).toByteArray(Charsets.UTF_8)),
+                        )
+                    }
                     val mime = if (targetUri.path?.endsWith(".html") == true) "video/mp2t" else (conn.contentType ?: "video/mp2t")
                     return WebResourceResponse(
                         mime,
@@ -671,6 +702,18 @@ class BrowserActivity : Activity() {
             } catch (_: Exception) {}
         }
         return null
+    }
+
+    /**
+     * Remembers which qualities the stream really offers and hands the player a
+     * master playlist holding only the saved choice, so the choice takes effect
+     * whatever player library the site uses.
+     */
+    private fun shapePlaylist(text: String): String {
+        if (!HlsMaster.isMaster(text)) return text
+        val heights = HlsMaster.heights(text)
+        if (heights.isNotEmpty()) streamHeights = heights
+        return HlsMaster.filter(text, VideoQuality.get(this))
     }
 
     private fun handleHlsPlaylist(url: Uri, reqHeaders: Map<String, String>): WebResourceResponse? {
@@ -693,12 +736,13 @@ class BrowserActivity : Activity() {
             val code = conn.responseCode
             if (code in 200..299 && LocalNetwork.isPublic(conn.url.toString())) {
                 val text = conn.inputStream.bufferedReader().use { it.readText() }
-                val healed = text.replace("playit15.xyz", "playit11.xyz")
+                val healed = shapePlaylist(text.replace("playit15.xyz", "playit11.xyz"))
                 val respHeaders = mutableMapOf(
                     "Access-Control-Allow-Origin" to "*",
                     "Access-Control-Allow-Methods" to "GET, POST, OPTIONS, HEAD",
                     "Access-Control-Allow-Headers" to "*",
-                    "Content-Type" to (conn.contentType ?: "application/vnd.apple.mpegurl")
+                    "Content-Type" to (conn.contentType ?: "application/vnd.apple.mpegurl"),
+                    "Cache-Control" to "no-store",
                 )
                 WebResourceResponse(
                     "application/vnd.apple.mpegurl",
@@ -736,7 +780,14 @@ class BrowserActivity : Activity() {
 
         @JavascriptInterface
         fun setQuality(value: String) {
-            if (value in VideoQuality.values) VideoQuality.set(this@BrowserActivity, value)
+            if (VideoQuality.isValid(value)) VideoQuality.set(this@BrowserActivity, value)
+        }
+
+        /** Heights a player reports for sources that are not HLS playlists (JW mp4 lists, YouTube). */
+        @JavascriptInterface
+        fun reportLevels(csv: String) {
+            val found = csv.split(',').mapNotNull { it.trim().toIntOrNull() }.filter { it in 100..4320 }
+            if (found.isNotEmpty()) streamHeights = (streamHeights + found).distinct().sortedDescending()
         }
 
         @JavascriptInterface
@@ -825,8 +876,66 @@ class BrowserActivity : Activity() {
                   } else if (cmd === 'fit') {
                     if (v) v.style.objectFit = arg;
                   } else if (cmd === 'quality') {
-                    if (window.__xtreamApplyQuality) window.__xtreamApplyQuality(arg);
-                    return;
+                    window.__xtreamQuality = String(arg);
+                    if (window.__xtreamApplyQuality) window.__xtreamApplyQuality();
+                    reload(v, p);
+                  }
+                }
+                function resume(media, t, playing){
+                  var once = function(){
+                    media.removeEventListener('loadedmetadata', once);
+                    try { if (t > 1 && Math.abs(media.currentTime - t) > 2) media.currentTime = t; } catch (e) {}
+                    if (playing) { var r = media.play(); if (r && r.catch) r.catch(function(){}); }
+                  };
+                  media.addEventListener('loadedmetadata', once);
+                }
+                // The app trims the stream's playlist to the saved quality, so load it again
+                // at the same position for the change to reach the picture.
+                function reload(v, p){
+                  var done = false;
+                  (window.__xtreamHlsList || []).forEach(function(h){
+                    try {
+                      if (!h.url || !h.media) return;
+                      var t = h.media.currentTime, playing = !h.media.paused;
+                      h.config.startPosition = t > 1 ? t : -1;
+                      resume(h.media, t, playing);
+                      h.loadSource(h.url);
+                      done = true;
+                    } catch (e) {}
+                  });
+                  if (done) return;
+                  if (p && p.load && p.getPlaylist) {
+                    try {
+                      var pos = p.getPosition ? p.getPosition() : 0;
+                      var index = p.getPlaylistIndex ? p.getPlaylistIndex() : 0;
+                      p.load(p.getPlaylist());
+                      if (index && p.playlistItem) p.playlistItem(index);
+                      p.once('firstFrame', function(){ if (pos > 1) p.seek(pos); });
+                      p.play();
+                      return;
+                    } catch (e) {}
+                  }
+                  if (window.videojs && window.videojs.getPlayers) {
+                    try {
+                      var players = window.videojs.getPlayers();
+                      var keys = Object.keys(players);
+                      for (var i = 0; i < keys.length; i++) {
+                        var vp = players[keys[i]];
+                        if (!vp || !vp.currentSource || !vp.currentSource().src) continue;
+                        var at = vp.currentTime(), on = !vp.paused();
+                        vp.src(vp.currentSource());
+                        vp.one('loadedmetadata', function(){ if (at > 1) vp.currentTime(at); if (on) vp.play(); });
+                        return;
+                      }
+                    } catch (e) {}
+                  }
+                  if (v) {
+                    var src = v.currentSrc || v.src;
+                    if (src && src.indexOf('blob:') !== 0) {
+                      resume(v, v.currentTime, !v.paused);
+                      v.src = src;
+                      v.load();
+                    }
                   }
                 }
                 window.__xtreamPlayer = function(cmd, arg){
@@ -845,7 +954,15 @@ class BrowserActivity : Activity() {
                 var q = 'best';
                 try { q = String(Xtream.quality()); } catch (e) {}
                 window.__xtreamQuality = q;
-                var hlsList = [];
+                var hlsList = window.__xtreamHlsList = [];
+                // Tells the app which heights a player offers when they don't come from an HLS playlist.
+                function report(levels){
+                  try {
+                    var hs = [];
+                    for (var i = 0; i < levels.length; i++) { var h = heightOf(levels[i]); if (h) hs.push(h); }
+                    if (hs.length) Xtream.reportLevels(hs.join(','));
+                  } catch (e) {}
+                }
                 function target(){
                   var v = window.__xtreamQuality;
                   if (v === 'auto') return 0;
@@ -953,6 +1070,7 @@ class BrowserActivity : Activity() {
                       try { jw.on('levels', applyJw); } catch (e) {}
                     }
                     var levels = jw.getQualityLevels() || [];
+                    report(levels);
                     var idx = pick(levels);
                     if (idx < 0) {
                       for (var i = 0; i < levels.length; i++) {
@@ -990,6 +1108,7 @@ class BrowserActivity : Activity() {
                     var names = mp.getAvailableQualityLevels() || [];
                     var sizes = { highres: 4320, hd2160: 2160, hd1440: 1440, hd1080: 1080, hd720: 720, large: 480, medium: 360, small: 240, tiny: 144 };
                     var levels = names.map(function(n){ return { height: sizes[n] || 0, name: n }; });
+                    report(levels);
                     var idx = pick(levels);
                     if (idx < 0) mp.setPlaybackQualityRange('auto', 'auto');
                     else mp.setPlaybackQualityRange(names[idx], names[idx]);
